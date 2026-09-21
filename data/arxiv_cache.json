@@ -1,0 +1,128 @@
+{
+  "water intake myth debunked_max_5": [
+    {
+      "title": "Water Bridging Dynamics of Polymerase Chain Reaction in the Gauge Theory Paradigm of Quantum Fields",
+      "authors": "Luc Montagnier, Jamal Aïssa, Antonio Capolupo, Travis J. A. Craddock, Philip Kurian, Claude Lavallee, Albino Polcari, Paola Romano, Alberto Tedeschi, Giuseppe Vitiello",
+      "summary": "We discuss the role of water bridging the DNA-enzyme interaction by resorting to recent results showing that London dispersion forces between delocalized electrons of base pairs of DNA are responsible for the formation of dipole modes that can be recognized by \\textit{Taq} polymerase. We describe the dynamic origin of the high efficiency and precise targeting of \\textit{Taq} activity in PCR. The spatiotemporal distribution of interaction couplings, frequencies, amplitudes, and phase modulations comprise a pattern of fields which constitutes the electromagnetic image of DNA in the surrounding water, which is what the polymerase enzyme actually recognizes in the DNA water environment. The experimental realization of PCR amplification, achieved through replacement of the DNA template by the treatment of pure water with electromagnetic signals recorded from viral and bacterial DNA solutions, is found consistent with the gauge theory paradigm of quantum fields.",
+      "published": "2018-03-29",
+      "pdf_link": "https://arxiv.org/pdf/1804.02436v1",
+      "source": "arXiv"
+    },
+    {
+      "title": "The myth of the Digital Earth between fragmentation and wholeness",
+      "authors": "Andrea Ballatore",
+      "summary": "Daring predictions of the proximate future can establish shared discursive frameworks, mobilize capital, and steer complex processes. Among the prophetic visions that encouraged and accompanied the development of new communication technologies was the \"Digital Earth,\" described in a 1998 speech by Al Gore as a high-resolution representation of the planet to share and analyze detailed information about its state. This article traces a genealogy of the Digital Earth as a techno-scientific myth, locating it in a constellation of media futures, arguing that a common subtext of these envisionments consists of a dream of wholeness, an afflatus to overcome perceived fragmentation among humans, and between humans and the Earth.",
+      "published": "2014-12-03",
+      "pdf_link": "https://arxiv.org/pdf/1412.2078v1",
+      "source": "arXiv"
+    },
+    {
+      "title": "Enhancing Food Intake Tracking in Long-Term Care with Automated Food Imaging and Nutrient Intake Tracking (AFINI-T) Technology",
+      "authors": "Kaylen J. Pfisterer, Robert Amelard, Jennifer Boger, Audrey G. Chung, Heather H. Keller, Alexander Wong",
+      "summary": "Half of long-term care (LTC) residents are malnourished increasing hospitalization, mortality, morbidity, with lower quality of life. Current tracking methods are subjective and time consuming. This paper presents the automated food imaging and nutrient intake tracking (AFINI-T) technology designed for LTC. We propose a novel convolutional autoencoder for food classification, trained on an augmented UNIMIB2016 dataset and tested on our simulated LTC food intake dataset (12 meal scenarios; up to 15 classes each; top-1 classification accuracy: 88.9%; mean intake error: -0.4 mL$\\pm$36.7 mL). Nutrient intake estimation by volume was strongly linearly correlated with nutrient estimates from mass ($r^2$ 0.92 to 0.99) with good agreement between methods ($σ$= -2.7 to -0.01; zero within each of the limits of agreement). The AFINI-T approach is a deep-learning powered computational nutrient sensing system that may provide a novel means for more accurately and objectively tracking LTC resident food intake to support and prevent malnutrition tracking strategies.",
+      "published": "2021-12-08",
+      "pdf_link": "https://arxiv.org/pdf/2112.04608v1",
+      "source": "arXiv"
+    },
+    {
+      "title": "Graph Neural Networks for Pressure Estimation in Water Distribution Systems",
+      "authors": "Huy Truong, Andrés Tello, Alexander Lazovik, Victoria Degeler",
+      "summary": "Pressure and flow estimation in Water Distribution Networks (WDN) allows water management companies to optimize their control operations. For many years, mathematical simulation tools have been the most common approach to reconstructing an estimate of the WDN hydraulics. However, pure physics-based simulations involve several challenges, e.g. partially observable data, high uncertainty, and extensive manual configuration. Thus, data-driven approaches have gained traction to overcome such limitations. In this work, we combine physics-based modeling and Graph Neural Networks (GNN), a data-driven approach, to address the pressure estimation problem. First, we propose a new data generation method using a mathematical simulation but not considering temporal patterns and including some control parameters that remain untouched in previous works; this contributes to a more diverse training data. Second, our training strategy relies on random sensor placement making our GNN-based estimation model robust to unexpected sensor location changes. Third, a realistic evaluation protocol considers real temporal patterns and additionally injects the uncertainties intrinsic to real-world scenarios. Finally, a multi-graph pre-training strategy allows the model to be reused for pressure estimation in unseen target WDNs. Our GNN-based model estimates the pressure of a large-scale WDN in The Netherlands with a MAE of 1.94mH$_2$O and a MAPE of 7%, surpassing the performance of previous studies. Likewise, it outperformed previous approaches on other WDN benchmarks, showing a reduction of absolute error up to approximately 52% in the best cases.",
+      "published": "2023-11-17",
+      "pdf_link": "https://arxiv.org/pdf/2311.10579v1",
+      "source": "arXiv"
+    },
+    {
+      "title": "Names from Greek Myth in Fundamental Physics",
+      "authors": "Nirmal Raj",
+      "summary": "Greek mythology supplies fundamental physics with the names of numerous (100+) experiments, machines, codes, and phenomena. I present the central narrative of Greek mythos via these names. Hyperlinks are provided for their physics counterparts, and the names are collected in myth- and physics-themed indices.",
+      "published": "2022-10-11",
+      "pdf_link": "https://arxiv.org/pdf/2210.10623v3",
+      "source": "arXiv"
+    }
+  ],
+  "reinforcement learning robotics performance_max_5": [
+    {
+      "title": "Value Bonuses using Ensemble Errors for Exploration in Reinforcement Learning",
+      "authors": "Abdul Wahab, Raksha Kumaraswamy, Martha White",
+      "summary": "Optimistic value estimates provide one mechanism for directed exploration in reinforcement learning (RL). The agent acts greedily with respect to an estimate of the value plus what can be seen as a value bonus. The value bonus can be learned by estimating a value function on reward bonuses, propagating local uncertainties around rewards. However, this approach only increases the value bonus for an action retroactively, after seeing a higher reward bonus from that state and action. Such an approach does not encourage the agent to visit a state and action for the first time. In this work, we introduce an algorithm for exploration called Value Bonuses with Ensemble errors (VBE), that maintains an ensemble of random action-value functions (RQFs). VBE uses the errors in the estimation of these RQFs to design value bonuses that provide first-visit optimism and deep exploration. The key idea is to design the rewards for these RQFs in such a way that the value bonus can decrease to zero. We show that VBE outperforms Bootstrap DQN and two reward bonus approaches (RND and ACB) on several classic environments used to test exploration and provide demonstrative experiments that it can scale easily to more complex environments like Atari.",
+      "published": "2026-02-12",
+      "pdf_link": "https://arxiv.org/pdf/2602.12375v1",
+      "source": "arXiv"
+    },
+    {
+      "title": "RoboBallet: Planning for Multi-Robot Reaching with Graph Neural Networks and Reinforcement Learning",
+      "authors": "Matthew Lai, Keegan Go, Zhibin Li, Torsten Kroger, Stefan Schaal, Kelsey Allen, Jonathan Scholz",
+      "summary": "Modern robotic manufacturing requires collision-free coordination of multiple robots to complete numerous tasks in shared, obstacle-rich workspaces. Although individual tasks may be simple in isolation, automated joint task allocation, scheduling, and motion planning under spatio-temporal constraints remain computationally intractable for classical methods at real-world scales. Existing multi-arm systems deployed in the industry rely on human intuition and experience to design feasible trajectories manually in a labor-intensive process. To address this challenge, we propose a reinforcement learning (RL) framework to achieve automated task and motion planning, tested in an obstacle-rich environment with eight robots performing 40 reaching tasks in a shared workspace, where any robot can perform any task in any order. Our approach builds on a graph neural network (GNN) policy trained via RL on procedurally-generated environments with diverse obstacle layouts, robot configurations, and task distributions. It employs a graph representation of scenes and a graph policy neural network trained through reinforcement learning to generate trajectories of multiple robots, jointly solving the sub-problems of task allocation, scheduling, and motion planning. Trained on large randomly generated task sets in simulation, our policy generalizes zero-shot to unseen settings with varying robot placements, obstacle geometries, and task poses. We further demonstrate that the high-speed capability of our solution enables its use in workcell layout optimization, improving solution times. The speed and scalability of our planner also open the door to new capabilities such as fault-tolerant planning and online perception-based re-planning, where rapid adaptation to dynamic task sets is required.",
+      "published": "2025-09-05",
+      "pdf_link": "https://arxiv.org/pdf/2509.05397v1",
+      "source": "arXiv"
+    },
+    {
+      "title": "Model Predictive Actor-Critic: Accelerating Robot Skill Acquisition with Deep Reinforcement Learning",
+      "authors": "Andrew S. Morgan, Daljeet Nandha, Georgia Chalvatzaki, Carlo D'Eramo, Aaron M. Dollar, Jan Peters",
+      "summary": "Substantial advancements to model-based reinforcement learning algorithms have been impeded by the model-bias induced by the collected data, which generally hurts performance. Meanwhile, their inherent sample efficiency warrants utility for most robot applications, limiting potential damage to the robot and its environment during training. Inspired by information theoretic model predictive control and advances in deep reinforcement learning, we introduce Model Predictive Actor-Critic (MoPAC), a hybrid model-based/model-free method that combines model predictive rollouts with policy optimization as to mitigate model bias. MoPAC leverages optimal trajectories to guide policy learning, but explores via its model-free method, allowing the algorithm to learn more expressive dynamics models. This combination guarantees optimal skill learning up to an approximation error and reduces necessary physical interaction with the environment, making it suitable for real-robot training. We provide extensive results showcasing how our proposed method generally outperforms current state-of-the-art and conclude by evaluating MoPAC for learning on a physical robotic hand performing valve rotation and finger gaiting--a task that requires grasping, manipulation, and then regrasping of an object.",
+      "published": "2021-03-25",
+      "pdf_link": "https://arxiv.org/pdf/2103.13842v1",
+      "source": "arXiv"
+    },
+    {
+      "title": "Reinforcement Learning Controllers for Soft Robots using Learned Environments",
+      "authors": "Uljad Berdica, Matthew Jackson, Niccolò Enrico Veronese, Jakob Foerster, Perla Maiolino",
+      "summary": "Soft robotic manipulators offer operational advantage due to their compliant and deformable structures. However, their inherently nonlinear dynamics presents substantial challenges. Traditional analytical methods often depend on simplifying assumptions, while learning-based techniques can be computationally demanding and limit the control policies to existing data. This paper introduces a novel approach to soft robotic control, leveraging state-of-the-art policy gradient methods within parallelizable synthetic environments learned from data. We also propose a safety oriented actuation space exploration protocol via cascaded updates and weighted randomness. Specifically, our recurrent forward dynamics model is learned by generating a training dataset from a physically safe \\textit{mean reverting} random walk in actuation space to explore the partially-observed state-space. We demonstrate a reinforcement learning approach towards closed-loop control through state-of-the-art actor-critic methods, which efficiently learn high-performance behaviour over long horizons. This approach removes the need for any knowledge regarding the robot's operation or capabilities and sets the stage for a comprehensive benchmarking tool in soft robotics control.",
+      "published": "2024-10-24",
+      "pdf_link": "https://arxiv.org/pdf/2410.18519v2",
+      "source": "arXiv"
+    },
+    {
+      "title": "Emotion in Reinforcement Learning Agents and Robots: A Survey",
+      "authors": "Thomas M. Moerland, Joost Broekens, Catholijn M. Jonker",
+      "summary": "This article provides the first survey of computational models of emotion in reinforcement learning (RL) agents. The survey focuses on agent/robot emotions, and mostly ignores human user emotions. Emotions are recognized as functional in decision-making by influencing motivation and action selection. Therefore, computational emotion models are usually grounded in the agent's decision making architecture, of which RL is an important subclass. Studying emotions in RL-based agents is useful for three research fields. For machine learning (ML) researchers, emotion models may improve learning efficiency. For the interactive ML and human-robot interaction (HRI) community, emotions can communicate state and enhance user investment. Lastly, it allows affective modelling (AM) researchers to investigate their emotion theories in a successful AI agent class. This survey provides background on emotion theory and RL. It systematically addresses 1) from what underlying dimensions (e.g., homeostasis, appraisal) emotions can be derived and how these can be modelled in RL-agents, 2) what types of emotions have been derived from these dimensions, and 3) how these emotions may either influence the learning efficiency of the agent or be useful as social signals. We also systematically compare evaluation criteria, and draw connections to important RL sub-domains like (intrinsic) motivation and model-based RL. In short, this survey provides both a practical overview for engineers wanting to implement emotions in their RL agents, and identifies challenges and directions for future emotion-RL research.",
+      "published": "2017-05-15",
+      "pdf_link": "https://arxiv.org/pdf/1705.05172v1",
+      "source": "arXiv"
+    }
+  ],
+  "reinforcement learning vs supervised learning robotics limitations\"}_max_5": [
+    {
+      "title": "Value Bonuses using Ensemble Errors for Exploration in Reinforcement Learning",
+      "authors": "Abdul Wahab, Raksha Kumaraswamy, Martha White",
+      "summary": "Optimistic value estimates provide one mechanism for directed exploration in reinforcement learning (RL). The agent acts greedily with respect to an estimate of the value plus what can be seen as a value bonus. The value bonus can be learned by estimating a value function on reward bonuses, propagating local uncertainties around rewards. However, this approach only increases the value bonus for an action retroactively, after seeing a higher reward bonus from that state and action. Such an approach does not encourage the agent to visit a state and action for the first time. In this work, we introduce an algorithm for exploration called Value Bonuses with Ensemble errors (VBE), that maintains an ensemble of random action-value functions (RQFs). VBE uses the errors in the estimation of these RQFs to design value bonuses that provide first-visit optimism and deep exploration. The key idea is to design the rewards for these RQFs in such a way that the value bonus can decrease to zero. We show that VBE outperforms Bootstrap DQN and two reward bonus approaches (RND and ACB) on several classic environments used to test exploration and provide demonstrative experiments that it can scale easily to more complex environments like Atari.",
+      "published": "2026-02-12",
+      "pdf_link": "https://arxiv.org/pdf/2602.12375v1",
+      "source": "arXiv"
+    },
+    {
+      "title": "Emotion in Reinforcement Learning Agents and Robots: A Survey",
+      "authors": "Thomas M. Moerland, Joost Broekens, Catholijn M. Jonker",
+      "summary": "This article provides the first survey of computational models of emotion in reinforcement learning (RL) agents. The survey focuses on agent/robot emotions, and mostly ignores human user emotions. Emotions are recognized as functional in decision-making by influencing motivation and action selection. Therefore, computational emotion models are usually grounded in the agent's decision making architecture, of which RL is an important subclass. Studying emotions in RL-based agents is useful for three research fields. For machine learning (ML) researchers, emotion models may improve learning efficiency. For the interactive ML and human-robot interaction (HRI) community, emotions can communicate state and enhance user investment. Lastly, it allows affective modelling (AM) researchers to investigate their emotion theories in a successful AI agent class. This survey provides background on emotion theory and RL. It systematically addresses 1) from what underlying dimensions (e.g., homeostasis, appraisal) emotions can be derived and how these can be modelled in RL-agents, 2) what types of emotions have been derived from these dimensions, and 3) how these emotions may either influence the learning efficiency of the agent or be useful as social signals. We also systematically compare evaluation criteria, and draw connections to important RL sub-domains like (intrinsic) motivation and model-based RL. In short, this survey provides both a practical overview for engineers wanting to implement emotions in their RL agents, and identifies challenges and directions for future emotion-RL research.",
+      "published": "2017-05-15",
+      "pdf_link": "https://arxiv.org/pdf/1705.05172v1",
+      "source": "arXiv"
+    },
+    {
+      "title": "A Tutorial on Meta-Reinforcement Learning",
+      "authors": "Jacob Beck, Risto Vuorio, Evan Zheran Liu, Zheng Xiong, Luisa Zintgraf, Chelsea Finn, Shimon Whiteson",
+      "summary": "While deep reinforcement learning (RL) has fueled multiple high-profile successes in machine learning, it is held back from more widespread adoption by its often poor data efficiency and the limited generality of the policies it produces. A promising approach for alleviating these limitations is to cast the development of better RL algorithms as a machine learning problem itself in a process called meta-RL. Meta-RL is most commonly studied in a problem setting where, given a distribution of tasks, the goal is to learn a policy that is capable of adapting to any new task from the task distribution with as little data as possible. In this survey, we describe the meta-RL problem setting in detail as well as its major variations. We discuss how, at a high level, meta-RL research can be clustered based on the presence of a task distribution and the learning budget available for each individual task. Using these clusters, we then survey meta-RL algorithms and applications. We conclude by presenting the open problems on the path to making meta-RL part of the standard toolbox for a deep RL practitioner.",
+      "published": "2023-01-19",
+      "pdf_link": "https://arxiv.org/pdf/2301.08028v4",
+      "source": "arXiv"
+    },
+    {
+      "title": "One-Shot Reinforcement Learning for Robot Navigation with Interactive Replay",
+      "authors": "Jake Bruce, Niko Suenderhauf, Piotr Mirowski, Raia Hadsell, Michael Milford",
+      "summary": "Recently, model-free reinforcement learning algorithms have been shown to solve challenging problems by learning from extensive interaction with the environment. A significant issue with transferring this success to the robotics domain is that interaction with the real world is costly, but training on limited experience is prone to overfitting. We present a method for learning to navigate, to a fixed goal and in a known environment, on a mobile robot. The robot leverages an interactive world model built from a single traversal of the environment, a pre-trained visual feature encoder, and stochastic environmental augmentation, to demonstrate successful zero-shot transfer under real-world environmental variations without fine-tuning.",
+      "published": "2017-11-28",
+      "pdf_link": "https://arxiv.org/pdf/1711.10137v2",
+      "source": "arXiv"
+    },
+    {
+      "title": "Stabilizing Extreme Q-learning by Maclaurin Expansion",
+      "authors": "Motoki Omura, Takayuki Osa, Yusuke Mukuta, Tatsuya Harada",
+      "summary": "In offline reinforcement learning, in-sample learning methods have been widely used to prevent performance degradation caused by evaluating out-of-distribution actions from the dataset. Extreme Q-learning (XQL) employs a loss function based on the assumption that Bellman error follows a Gumbel distribution, enabling it to model the soft optimal value function in an in-sample manner. It has demonstrated strong performance in both offline and online reinforcement learning settings. However, issues remain, such as the instability caused by the exponential term in the loss function and the risk of the error distribution deviating from the Gumbel distribution. Therefore, we propose Maclaurin Expanded Extreme Q-learning to enhance stability. In this method, applying Maclaurin expansion to the loss function in XQL enhances stability against large errors. This approach involves adjusting the modeled value function between the value function under the behavior policy and the soft optimal value function, thus achieving a trade-off between stability and optimality depending on the order of expansion. It also enables adjustment of the error distribution assumption from a normal distribution to a Gumbel distribution. Our method significantly stabilizes learning in online RL tasks from DM Control, where XQL was previously unstable. Additionally, it improves performance in several offline RL tasks from D4RL.",
+      "published": "2024-06-07",
+      "pdf_link": "https://arxiv.org/pdf/2406.04896v2",
+      "source": "arXiv"
+    }
+  ]
+}

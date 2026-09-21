@@ -1,0 +1,48 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.pytest_cache/
+.Python
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+venv/
+env/
+.venv/
+.venv*/
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+.env
+
+# ── Streamlit ─────────────────────────────────────────────────────────────────
+.streamlit/
+
+# ── Generated outputs ─────────────────────────────────────────────────────────
+outputs/
+*.log
+experiments/results/
+
+# ── SciFact dataset (large, download separately) ──────────────────────────────
+data/scifact/*.jsonl
+data/scifact/cross_validation/
+data/papers/
+
+# ── Internal planning documents ───────────────────────────────────────────────
+architech.docx
+architech_phase3.md
+*.docx
+
+# ── One-off debug scripts ─────────────────────────────────────────────────────
+test_arxiv_api.py
+test_scifact_retrieval.py

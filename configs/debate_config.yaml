@@ -1,0 +1,113 @@
+# # Cấu hình cho Scientific Fact-checking Debate Simulator
+
+# # LLM Backend & Hyperparameters cho các Agent
+# llm_backends:
+#   # Chế độ chạy: "Same model (all agents)" hoặc "Heter-MAD (different models)"
+#   mode: "Heter-MAD (different models)"
+  
+#   # Cấu hình mặc định khi dùng chế độ "Same model"
+#   same_model:
+#     backend: "Groq (cloud)"
+#     model: "llama-3.3-70b-versatile"
+#     temperature: 0.7  # Dùng chung nếu ở chế độ Same model
+    
+#   # Cấu hình tối ưu khi dùng chế độ "Heter-MAD"
+#   heter_mad:
+#     pro:
+#       backend: "OpenRouter (cloud)"
+#       model: "openai/gpt-oss-120b:free"
+#       temperature: 0.5
+#     con:
+#       backend: "Groq (cloud)"
+#       model: "llama-3.3-70b-versatile"
+#       temperature: 0.7
+#     judge:
+#       backend: "Groq (cloud)"
+#       model: "meta-llama/llama-4-scout-17b-16e-instruct"
+#       temperature: 0.1
+
+# # Thiết lập cuộc tranh luận chung
+# debate_settings:
+#   max_rounds: 3
+#   max_tokens: 300
+#   parallel_opening: true
+
+# # Thiết lập DAR Filtering (Phase 3)
+# dar_settings:
+#   enable_dar: true
+#   filter_backend: "Groq (cloud)"
+#   filter_model: "meta-llama/llama-4-scout-17b-16e-instruct"
+#   filter_temperature: 0.0  # FILTER: Luôn là 0.0 để lọc trùng chính xác
+
+# # Thiết lập tối ưu hóa bất định UDPO (Phase 4)
+# uncertainty_settings:
+#   compute_consensus: true
+#   n_samples: 4
+#   enable_early_stopping: true
+#   use_logprobs: true
+#   uncertainty_backend_mode: "Use same models as debate"
+#   uncertainty_model: "qwen2.5:3b"
+
+# # RAG evidence retrieval
+# rag_settings:
+#   enable_rag: true
+#   source: "hybrid"
+#   max_results: 5
+
+# Cấu hình cho Scientific Fact-checking Debate Simulator
+
+# LLM Backend & Hyperparameters cho các Agent
+llm_backends:
+  # Chế độ chạy: "Same model (all agents)" hoặc "Heter-MAD (different models)"
+  mode: "Heter-MAD (different models)"
+  
+  # Cấu hình mặc định khi dùng chế độ "Same model"
+  same_model:
+    backend: "OpenRouter (cloud)"
+    model: "openai/gpt-oss-120b:free"
+    temperature: 0.7  # Dùng chung nếu ở chế độ Same model
+    
+  # Cấu hình tối ưu khi dùng chế độ "Heter-MAD"
+  heter_mad:
+    pro:
+      backend: "Groq (cloud)"
+      model:  "llama-3.3-70b-versatile"     #"openai/gpt-oss-20b:free"
+      temperature: 0.6  # PRO: Cân bằng giữa logic và lập luận
+    con:
+      backend: "OpenRouter (cloud)"
+      model: "openai/gpt-oss-120b:free"
+      temperature: 0.8  # CON: Tăng độ hoài nghi sáng tạo để tìm lỗ hổng
+    judge:
+      backend: "Groq (cloud)"
+      model: "meta-llama/llama-4-scout-17b-16e-instruct" #"llama-3.3-70b-versatile"
+      temperature: 0.0  # JUDGE: Tuyệt đối khách quan và nhất quán
+
+# Thiết lập cuộc tranh luận chung
+debate_settings:
+  max_rounds: 3
+  max_tokens: 300
+  parallel_opening: true
+
+# Thiết lập DAR Filtering (Phase 3)
+dar_settings:
+  enable_dar: true
+  filter_backend: "Groq (cloud)"
+  filter_model: "meta-llama/llama-4-scout-17b-16e-instruct"
+  filter_temperature: 0.0  # FILTER: Luôn là 0.0 để lọc trùng chính xác
+
+# Thiết lập tối ưu hóa bất định UDPO (Phase 4)
+uncertainty_settings:
+  compute_consensus: true
+  n_samples: 4
+  enable_early_stopping: true
+  use_logprobs: true
+  uncertainty_backend: "OpenRouter (cloud)"
+  # Lựa chọn: "Use OpenRouter (nvidia/nemotron-3-super-120b-a12b:free) (Cloud - Super Fast & Free)", "Use local Ollama (Local - Free but slow on CPU)", "Use same models as debate"
+  uncertainty_model: "openai/gpt-oss-120b:free"  # Dùng cùng model với CON để đánh giá chính xác sự bất định của CON
+  uncertainty_model_local: "qwen2.5:3b"
+
+# Thiết lập RAG arXiv (Phase 5)
+rag_settings:
+  enable_rag: true
+  source: "hybrid"  # Lựa chọn: "arxiv_api", "local_db", "hybrid"
+  max_results: 5

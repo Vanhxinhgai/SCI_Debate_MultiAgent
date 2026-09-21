@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scidebate"
+version = "0.1.0"
+description = "AI Fact-Checking Assistant for Scientific Literature using Multi-Agent Debate"
+requires-python = ">=3.10"
+dependencies = [
+    "openai==1.54.0",
+    "httpx<0.28",
+    "streamlit==1.39.0",
+    "plotly>=5.24.0",
+    "pyyaml==6.0.2",
+    "requests==2.32.3",
+    "python-dotenv>=1.0.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["scidebate*"]
+exclude = ["tests*", "experiments*", "configs*", "data*"]
