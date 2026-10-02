@@ -257,3 +257,50 @@ def compute_all_metrics(
         "retrieval_precision": ret_precision,
         "n_samples": len(predictions),
     }
+
+
+# ── Statistical significance ───────────────────────────────────────────────────
+
+def bootstrap_ci(
+    predictions: Sequence[str],
+    ground_truths: Sequence[str],
+    metric: str = "macro_f1",
+    n_resamples: int = 2000,
+    alpha: float = 0.05,
+    seed: int = 42,
+) -> tuple[float, float]:
+    """Percentile bootstrap CI for accuracy or macro-F1 (resampling claims)."""
+    import random
+
+    n = len(predictions)
+    if n == 0:
+        return (0.0, 0.0)
+    rng = random.Random(seed)
+    values = []
+    for _ in range(n_resamples):
+        idx = [rng.randrange(n) for _ in range(n)]
+        p = [predictions[i] for i in idx]
+        g = [ground_truths[i] for i in idx]
+        if metric == "accuracy":
+            values.append(verdict_accuracy(p, g))
+        else:
+            values.append(compute_macro_f1(p, g)["macro_f1"])
+    values.sort()
+    lo = values[int((alpha / 2) * n_resamples)]
+    hi = values[min(n_resamples - 1, int((1 - alpha / 2) * n_resamples))]
+    return (round(lo, 4), round(hi, 4))
+
+
+def mcnemar_exact(correct_a: Sequence[bool], correct_b: Sequence[bool]) -> dict:
+    """Exact (binomial) McNemar test on paired per-claim correctness.
+
+    b = A right & B wrong, c = A wrong & B right. Two-sided p-value.
+    """
+    b = sum(1 for x, y in zip(correct_a, correct_b) if x and not y)
+    c = sum(1 for x, y in zip(correct_a, correct_b) if y and not x)
+    n = b + c
+    if n == 0:
+        return {"b": b, "c": c, "p_value": 1.0}
+    k = min(b, c)
+    tail = sum(math.comb(n, i) for i in range(k + 1)) / (2 ** n)
+    return {"b": b, "c": c, "p_value": round(min(1.0, 2 * tail), 4)}

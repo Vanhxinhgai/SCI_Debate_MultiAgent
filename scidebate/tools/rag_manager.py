@@ -6,7 +6,7 @@ queries arXiv, and compiles retrieved paper summaries into structured Markdown e
 import re
 from scidebate.llms import BaseLLM
 from scidebate.tools.arxiv_search import search_arxiv
-from scidebate.tools.scifact import retrieve_scifact_evidence
+from scidebate.tools.scifact import SciFactDatasetError, retrieve_scifact_evidence
 
 # Danh sách từ dừng để lọc từ khóa khi không có LLM
 STOPWORDS = {
@@ -161,7 +161,18 @@ def retrieve_evidence(
         return retrieve_scifact_evidence(claim, max_results=max_results, stance=stance)
     if source_key in {"hybrid", "both", "scifact+arxiv", "arxiv+scifact"}:
         half = max(1, max_results // 2)
-        scifact_res = retrieve_scifact_evidence(claim, max_results=half, stance=stance)
+        try:
+            scifact_res = retrieve_scifact_evidence(claim, max_results=half, stance=stance)
+        except SciFactDatasetError as e:
+            # Corpus not downloaded → degrade to arXiv-only instead of crashing the debate.
+            print(f"[RAG] SciFact unavailable ({e}). Falling back to arXiv only.")
+            return retrieve_evidence(
+                claim,
+                max_results=max_results,
+                generator_llm=generator_llm,
+                stance=stance,
+                source="arxiv",
+            )
         arxiv_res = retrieve_evidence(
             claim,
             max_results=max_results - half,

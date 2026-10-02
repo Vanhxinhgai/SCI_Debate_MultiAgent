@@ -3,6 +3,7 @@
 Baselines:
     A — Zero-Shot LLM: single LLM, no debate, no RAG
     B — RAG-Only:      retrieve evidence → single-pass verdict (no debate)
+    B2 — CoT + RAG:    same evidence as B, step-by-step reasoning (no debate)
     C — Debate-No-RAG: multi-agent debate WITHOUT evidence retrieval
 """
 from __future__ import annotations
@@ -20,10 +21,30 @@ VERDICT_RE = re.compile(
 CONFIDENCE_RE = re.compile(r"confidence[:\s]+([0-9]*\.?[0-9]+)", re.IGNORECASE)
 
 
+VERDICT_LINE_RE = re.compile(
+    r"verdict\s*[:\-]\s*\**\s*(SUPPORTED|REFUTED|INCONCLUSIVE)", re.IGNORECASE
+)
+
+
+def _ask(llm: BaseLLM, prompt: str) -> str:
+    """Single-turn call. BaseLLM.generate expects a message list and returns LLMResponse."""
+    return llm.generate([{"role": "user", "content": prompt}]).content
+
+
 def _parse_verdict_from_text(text: str) -> tuple[str, float]:
-    """Extract (verdict, confidence) from a free-text response."""
-    m = VERDICT_RE.search(text)
-    verdict = m.group(1).upper() if m else "INCONCLUSIVE"
+    """Extract (verdict, confidence) from a free-text response.
+
+    Prefer the explicit "Verdict: X" line (the last one, since CoT reasoning may
+    mention other labels first); otherwise fall back to the last bare label.
+    """
+    line_matches = VERDICT_LINE_RE.findall(text)
+    bare_matches = VERDICT_RE.findall(text)
+    if line_matches:
+        verdict = line_matches[-1].upper()
+    elif bare_matches:
+        verdict = bare_matches[-1].upper()
+    else:
+        verdict = "INCONCLUSIVE"
     cm = CONFIDENCE_RE.search(text)
     confidence = float(cm.group(1)) if cm else 0.5
     confidence = max(0.0, min(1.0, confidence))
@@ -73,7 +94,7 @@ class ZeroShotBaseline:
     def run(self, claim: str) -> BaselineResult:
         t0 = time.time()
         prompt = _ZERO_SHOT_PROMPT.format(claim=claim)
-        raw = self.llm.generate(prompt)
+        raw = _ask(self.llm, prompt)
         verdict, confidence = _parse_verdict_from_text(raw)
         return BaselineResult(
             claim=claim,
@@ -136,9 +157,65 @@ class RAGOnlyBaseline:
         else:
             prompt = _ZERO_SHOT_PROMPT.format(claim=claim)
 
-        raw = self.llm.generate(prompt)
+        raw = _ask(self.llm, prompt)
         verdict, confidence = _parse_verdict_from_text(raw)
 
+        return BaselineResult(
+            claim=claim,
+            verdict=verdict,
+            confidence=confidence,
+            elapsed_seconds=round(time.time() - t0, 2),
+            raw_response=raw,
+            retrieved_papers=papers,
+        )
+
+
+# ── Baseline B2: Chain-of-Thought + RAG ───────────────────────────────────────
+
+_COT_PROMPT = """You are a scientific fact-checker. Use the retrieved evidence below to evaluate the claim.
+
+RETRIEVED EVIDENCE:
+{context}
+
+Claim: {claim}
+
+Let's think step by step:
+1. Identify what the claim asserts (population, intervention/exposure, outcome, direction).
+2. For each relevant document, state whether it supports, contradicts, or does not address the claim.
+3. Weigh the evidence. If no document directly addresses the claim, the verdict is INCONCLUSIVE.
+
+After your reasoning, end with exactly these lines:
+Verdict: <SUPPORTED|REFUTED|INCONCLUSIVE>
+Confidence: <0.0–1.0>
+"""
+
+
+class CoTBaseline:
+    """Baseline B2: same retrieved evidence as RAG-Only, with step-by-step reasoning."""
+
+    name = "Baseline-B2: CoT + RAG"
+
+    def __init__(self, llm: BaseLLM, max_results: int = 5, source: str = "hybrid"):
+        self.llm = llm
+        self.max_results = max_results
+        self.source = source
+
+    def run(self, claim: str) -> BaselineResult:
+        t0 = time.time()
+        try:
+            res = retrieve_evidence(
+                claim,
+                max_results=self.max_results,
+                generator_llm=self.llm,
+                stance="NEUTRAL",
+                source=self.source,
+            )
+            context, papers = res["context"], res["papers"]
+        except Exception:
+            context, papers = "No evidence retrieved.", []
+
+        raw = _ask(self.llm, _COT_PROMPT.format(context=context, claim=claim))
+        verdict, confidence = _parse_verdict_from_text(raw)
         return BaselineResult(
             claim=claim,
             verdict=verdict,

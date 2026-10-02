@@ -6,14 +6,18 @@ Expected local layout:
     data/scifact/claims_dev.jsonl
     data/scifact/claims_test.jsonl
 
-The retriever uses gold claim annotations only when the input claim exactly
-matches a SciFact claim. For arbitrary user claims, it falls back to lexical
-retrieval over the SciFact corpus and marks results as retrieved, not gold.
+By default the retriever uses lexical (TF-IDF) retrieval over the corpus for
+every claim. Gold evidence annotations are only used when explicitly enabled
+(use_gold_if_exact_match=True) — never enable this for evaluation, because gold
+evidence is selected using the claim's label (label leakage).
+
+The dataset directory can be overridden with the SCIFACT_DIR env variable.
 """
 from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from collections import Counter
 from functools import lru_cache
@@ -21,6 +25,11 @@ from pathlib import Path
 
 
 DEFAULT_SCIFACT_DIR = Path("data/scifact")
+
+
+def _resolve_dir(data_dir: str | None) -> str:
+    """Explicit arg > SCIFACT_DIR env var > data/scifact (resolved at call time)."""
+    return str(data_dir or os.environ.get("SCIFACT_DIR") or DEFAULT_SCIFACT_DIR)
 CLAIM_FILES = ("claims_dev.jsonl", "claims_train.jsonl", "claims_test.jsonl")
 
 STOPWORDS = {
@@ -111,9 +120,13 @@ def _doc_to_paper(
     return paper
 
 
-@lru_cache(maxsize=4)
-def load_scifact_dataset(data_dir: str = str(DEFAULT_SCIFACT_DIR)) -> dict:
+def load_scifact_dataset(data_dir: str | None = None) -> dict:
     """Load SciFact corpus and claim files from a local directory."""
+    return _load_scifact_dataset_cached(_resolve_dir(data_dir))
+
+
+@lru_cache(maxsize=4)
+def _load_scifact_dataset_cached(data_dir: str) -> dict:
     root = Path(data_dir)
     corpus_path = root / "corpus.jsonl"
     if not corpus_path.exists():
@@ -140,7 +153,7 @@ def load_scifact_dataset(data_dir: str = str(DEFAULT_SCIFACT_DIR)) -> dict:
     }
 
 
-def find_scifact_claim(claim: str, data_dir: str = str(DEFAULT_SCIFACT_DIR)) -> dict | None:
+def find_scifact_claim(claim: str, data_dir: str | None = None) -> dict | None:
     """Find an exact normalized claim match in SciFact claim files."""
     dataset = load_scifact_dataset(data_dir)
     target = _normalize_claim(claim)
@@ -173,10 +186,37 @@ def _stance_rescore(scored: list[tuple[float, dict]], stance: str) -> list[tuple
         return scored
     reweighted = []
     for score, doc in scored:
-        text = f"{doc.get('title', '')} {_abstract_text(doc)}".lower()
-        matches = sum(1 for t in boost_terms if t in text)
+        # Match whole words: substring matching made "no" hit "know"/"normal"/"not",
+        # so almost every document received the CON boost.
+        words = set(re.findall(r"[a-z]+", f"{doc.get('title', '')} {_abstract_text(doc)}".lower()))
+        matches = len(boost_terms & words)
         reweighted.append((score * (1.0 + 0.35 * matches), doc))
     return sorted(reweighted, key=lambda item: item[0], reverse=True)
+
+
+# Index cache keyed by id(corpus dict): load_scifact_dataset is lru_cached, so the
+# corpus object is stable and the index is built once instead of on every query.
+_INDEX_CACHE: dict[int, tuple] = {}
+
+
+def _build_index(docs: dict[str, dict]) -> tuple[dict, Counter, dict]:
+    key = id(docs)
+    if key in _INDEX_CACHE:
+        return _INDEX_CACHE[key]
+
+    doc_terms = {}
+    df = Counter()
+    title_terms = {}
+    for doc_id, doc in docs.items():
+        text = f"{doc.get('title', '')} {_abstract_text(doc)}"
+        counts = Counter(_tokenize(text))
+        doc_terms[doc_id] = counts
+        title_terms[doc_id] = set(_tokenize(str(doc.get("title", ""))))
+        for term in counts:
+            df[term] += 1
+
+    _INDEX_CACHE[key] = (doc_terms, df, title_terms)
+    return _INDEX_CACHE[key]
 
 
 def _score_docs(claim: str, docs: dict[str, dict]) -> list[tuple[float, dict]]:
@@ -184,15 +224,7 @@ def _score_docs(claim: str, docs: dict[str, dict]) -> list[tuple[float, dict]]:
     if not query_terms:
         return []
 
-    doc_terms = {}
-    df = Counter()
-    for doc_id, doc in docs.items():
-        text = f"{doc.get('title', '')} {_abstract_text(doc)}"
-        terms = _tokenize(text)
-        counts = Counter(terms)
-        doc_terms[doc_id] = counts
-        for term in counts:
-            df[term] += 1
+    doc_terms, df, all_title_terms = _build_index(docs)
 
     n_docs = max(len(docs), 1)
     scores = []
@@ -200,7 +232,7 @@ def _score_docs(claim: str, docs: dict[str, dict]) -> list[tuple[float, dict]]:
     for doc_id, counts in doc_terms.items():
         score = 0.0
         doc_len = sum(counts.values()) or 1
-        title_terms = set(_tokenize(str(docs[doc_id].get("title", ""))))
+        title_terms = all_title_terms[doc_id]
         for term, qtf in query_counts.items():
             if term not in counts:
                 continue
@@ -215,8 +247,10 @@ def _score_docs(claim: str, docs: dict[str, dict]) -> list[tuple[float, dict]]:
 
 
 def _gold_evidence_from_claim(claim_row: dict, corpus: dict[str, dict], stance: str) -> list[dict]:
+    # Both sides receive the same gold documents: splitting them by gold label
+    # (SUPPORT → PRO, CONTRADICT → CON) would tell each agent the answer.
     evidence = claim_row.get("evidence") or {}
-    wanted_labels = {"PRO": {"SUPPORT"}, "CON": {"CONTRADICT"}}.get(stance, {"SUPPORT", "CONTRADICT"})
+    wanted_labels = {"SUPPORT", "CONTRADICT"}
     papers = []
 
     for doc_id, entries in evidence.items():
@@ -245,8 +279,8 @@ def retrieve_scifact_evidence(
     claim: str,
     max_results: int = 3,
     stance: str = "NEUTRAL",
-    data_dir: str = str(DEFAULT_SCIFACT_DIR),
-    use_gold_if_exact_match: bool = True,
+    data_dir: str | None = None,
+    use_gold_if_exact_match: bool = False,
 ) -> dict:
     """Retrieve evidence from local SciFact files.
 
@@ -306,24 +340,18 @@ def retrieve_scifact_evidence(
             "No relevant SciFact evidence was found. Do not invent SciFact citations."
         )
     else:
-        mode_note = (
-            "These are gold SciFact evidence annotations for an exact dataset claim match."
-            if retrieval_mode == "gold"
-            else "These are lexically retrieved SciFact corpus documents, not gold evidence labels."
-        )
+        # Never expose gold labels (SUPPORT/CONTRADICT) or the retrieval mode to the
+        # agents — both reveal the answer. Labels stay in `papers` for the UI only.
         context_lines = [
             header,
-            mode_note,
-            "Use only directly relevant evidence. Do not fabricate citations or labels.",
+            "These are SciFact corpus documents retrieved for this claim. They may or may not be relevant.",
+            "Use only directly relevant evidence. Do not fabricate citations.",
             "",
         ]
         for i, paper in enumerate(papers, 1):
-            label = paper.get("label", "RETRIEVED")
             doc_id = paper.get("doc_id", "N/A")
-            evidence_sentences = paper.get("evidence_sentences") or []
-            sentence_note = f" sentences={evidence_sentences}" if evidence_sentences else ""
             context_lines.extend([
-                f"Document [{i}] (SciFact doc_id={doc_id}, label={label}{sentence_note}):",
+                f"Document [{i}] (SciFact doc_id={doc_id}):",
                 f"- Title: {paper['title']}",
                 f"- Evidence Text: {paper['summary']}",
                 "",

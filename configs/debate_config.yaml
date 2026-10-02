@@ -63,23 +63,23 @@ llm_backends:
   
   # Cấu hình mặc định khi dùng chế độ "Same model"
   same_model:
-    backend: "OpenRouter (cloud)"
-    model: "openai/gpt-oss-120b:free"
+    backend: "Groq (cloud)"
+    model: "qwen/qwen3.8-27b"
     temperature: 0.7  # Dùng chung nếu ở chế độ Same model
     
   # Cấu hình tối ưu khi dùng chế độ "Heter-MAD"
   heter_mad:
     pro:
       backend: "Groq (cloud)"
-      model:  "llama-3.3-70b-versatile"     #"openai/gpt-oss-20b:free"
+      model: "qwen/qwen3.8-27b"
       temperature: 0.6  # PRO: Cân bằng giữa logic và lập luận
     con:
       backend: "OpenRouter (cloud)"
-      model: "openai/gpt-oss-120b:free"
+      model: "nvidia/nemotron-3-super-120b-a12b:free"
       temperature: 0.8  # CON: Tăng độ hoài nghi sáng tạo để tìm lỗ hổng
     judge:
       backend: "Groq (cloud)"
-      model: "meta-llama/llama-4-scout-17b-16e-instruct" #"llama-3.3-70b-versatile"
+      model: "openai/gpt-oss-120b"
       temperature: 0.0  # JUDGE: Tuyệt đối khách quan và nhất quán
 
 # Thiết lập cuộc tranh luận chung
@@ -92,7 +92,7 @@ debate_settings:
 dar_settings:
   enable_dar: true
   filter_backend: "Groq (cloud)"
-  filter_model: "meta-llama/llama-4-scout-17b-16e-instruct"
+  filter_model: "openai/gpt-oss-20b"
   filter_temperature: 0.0  # FILTER: Luôn là 0.0 để lọc trùng chính xác
 
 # Thiết lập tối ưu hóa bất định UDPO (Phase 4)
@@ -101,9 +101,9 @@ uncertainty_settings:
   n_samples: 4
   enable_early_stopping: true
   use_logprobs: true
-  uncertainty_backend: "OpenRouter (cloud)"
+  uncertainty_backend: "Groq (cloud)"
   # Lựa chọn: "Use OpenRouter (nvidia/nemotron-3-super-120b-a12b:free) (Cloud - Super Fast & Free)", "Use local Ollama (Local - Free but slow on CPU)", "Use same models as debate"
-  uncertainty_model: "openai/gpt-oss-120b:free"  # Dùng cùng model với CON để đánh giá chính xác sự bất định của CON
+  uncertainty_model: "openai/gpt-oss-20b"
   uncertainty_model_local: "qwen2.5:3b"
 
 # Thiết lập RAG arXiv (Phase 5)
@@ -111,3 +111,16 @@ rag_settings:
   enable_rag: true
   source: "hybrid"  # Lựa chọn: "arxiv_api", "local_db", "hybrid"
   max_results: 5
+
+# Thiết lập thực nghiệm (experiments/scifact_eval.py)
+eval_settings:
+  # Base model cho Single-agent / RAG-only / CoT / Homo-MAD (3 agent cùng model).
+  # Nên trùng với model của PRO để so sánh Homo-MAD vs Heter-MAD chỉ khác ở CON/JUDGE.
+  base_model:
+    backend: "Groq (cloud)"
+    model: "qwen/qwen3.8-27b"
+    temperature: 0.0
+  # Request/phút tối đa cho mỗi provider (giãn cách request, tránh lỗi 429)
+  rpm:
+    groq: 25
+    openrouter: 15

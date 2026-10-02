@@ -24,6 +24,7 @@ class GroqLLM(BaseLLM):
     """Groq backend (OpenAI-compatible API)."""
 
     BASE_URL = "https://api.groq.com/openai/v1"
+    REASONING_HEADROOM = 768
 
     def __init__(
         self,
@@ -39,7 +40,8 @@ class GroqLLM(BaseLLM):
                 "Groq API key required. Set GROQ_API_KEY env var "
                 "or pass api_key= to GroqLLM()."
             )
-        self._client = OpenAI(base_url=self.BASE_URL, api_key=key)
+        # max_retries: SDK tự retry 429/5xx theo header retry-after (free tier giới hạn token/phút)
+        self._client = OpenAI(base_url=self.BASE_URL, api_key=key, max_retries=6)
 
     def generate(self, messages: list[dict], **kwargs) -> LLMResponse:
         # Cho phép override temperature/max_tokens per-call
@@ -53,6 +55,13 @@ class GroqLLM(BaseLLM):
             api_kwargs["logprobs"] = logprobs
         if top_logprobs is not None:
             api_kwargs["top_logprobs"] = top_logprobs
+        if self.model.startswith("openai/gpt-oss"):
+            # Reasoning models spend max_tokens on hidden reasoning first; at the default
+            # effort the visible answer gets truncated (e.g. "VERDICT: IN").
+            api_kwargs["reasoning_effort"] = "low"
+            # Hidden reasoning tokens count against max_tokens, so add headroom on top
+            # of the visible-answer budget (otherwise 1–10 token verdict calls return "").
+            max_tokens = max_tokens + self.REASONING_HEADROOM
 
         try:
             response = self._client.chat.completions.create(
@@ -65,11 +74,14 @@ class GroqLLM(BaseLLM):
         except Exception as e:
             # Fallback if logprobs not supported by the model/endpoint
             if logprobs:
+                api_kwargs.pop("logprobs", None)
+                api_kwargs.pop("top_logprobs", None)
                 response = self._client.chat.completions.create(
                     model=self.model,
                     messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    **api_kwargs
                 )
             else:
                 raise e

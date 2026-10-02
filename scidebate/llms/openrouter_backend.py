@@ -41,7 +41,8 @@ class OpenRouterLLM(BaseLLM):
             )
 
         self.base_url = base_url or self.DEFAULT_BASE_URL
-        self._client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        # max_retries: SDK tự retry 429/5xx theo header retry-after (model :free hay bị nghẽn)
+        self._client = OpenAI(api_key=self.api_key, base_url=self.base_url, max_retries=6)
 
     def generate(self, messages: list[dict], **kwargs) -> LLMResponse:
         temperature = kwargs.get("temperature", self.temperature)
@@ -54,6 +55,9 @@ class OpenRouterLLM(BaseLLM):
             api_kwargs["logprobs"] = logprobs
         if top_logprobs is not None:
             api_kwargs["top_logprobs"] = top_logprobs
+        # Reasoning models (e.g. Nemotron) otherwise spend max_tokens thinking and
+        # return empty content. Ignored by non-reasoning models.
+        api_kwargs["extra_body"] = {"reasoning": {"enabled": False}}
 
         try:
             response = self._client.chat.completions.create(
@@ -66,11 +70,14 @@ class OpenRouterLLM(BaseLLM):
         except Exception as e:
             # Fallback if logprobs not supported by provider/model
             if logprobs:
+                api_kwargs.pop("logprobs", None)
+                api_kwargs.pop("top_logprobs", None)
                 response = self._client.chat.completions.create(
                     model=self.model,
                     messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    **api_kwargs
                 )
             else:
                 raise e
