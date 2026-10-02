@@ -1805,7 +1805,20 @@ if start:
             )
         except Exception as e:
             err_str = str(e)
-            if "429" in err_str or "rate_limit" in err_str.lower() or "rate limit" in err_str.lower() or "too many requests" in err_str.lower():
+            if "free-models-per-day" in err_str or "openrouter_free_tier_daily" in err_str:
+                st.error(
+                    "**OpenRouter daily free quota exhausted (50 requests/day)**\n\n"
+                    "Retrying now will not help. The quota resets at 00:00 UTC (07:00 Vietnam time). Options:\n"
+                    "- Wait for the daily reset\n"
+                    "- Add credits on OpenRouter (≥10 USD raises the free-model limit to 1000 requests/day)\n"
+                    "- Switch the CON agent to a Groq model in the sidebar"
+                )
+            elif "tokens per day" in err_str.lower() or "(tpd)" in err_str.lower():
+                st.error(
+                    "**Groq daily token quota exhausted**\n\n"
+                    "Retrying now will not help. Wait for the daily reset, or switch the affected agent to another model."
+                )
+            elif "429" in err_str or "rate_limit" in err_str.lower() or "rate limit" in err_str.lower() or "too many requests" in err_str.lower():
                 st.error(
                     "**Rate Limit Exceeded (HTTP 429)**\n\n"
                     "The API provider has temporarily throttled requests. To resolve this:\n"
