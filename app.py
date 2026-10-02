@@ -1251,6 +1251,14 @@ section[data-testid="stSidebar"] [data-testid="stNumberInput"] button:hover {
     color: rgba(255, 255, 255, 0.65) !important;
 }
 
+/* Restore Streamlit's icon font. The span font-family overrides above otherwise turn
+   icons (e.g. expander arrows) into their ligature text, like "keyboard_arrow_right". */
+[data-testid="stIconMaterial"],
+[data-testid="stExpander"] summary [data-testid="stIconMaterial"],
+section[data-testid="stSidebar"] [data-testid="stIconMaterial"] {
+    font-family: "Material Symbols Rounded" !important;
+}
+
 </style>
 """
 st.markdown(_CSS, unsafe_allow_html=True)
