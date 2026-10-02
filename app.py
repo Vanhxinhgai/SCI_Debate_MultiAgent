@@ -3,6 +3,7 @@
 Run:
     streamlit run app.py
 """
+import html
 import os
 import re
 import time
@@ -101,6 +102,19 @@ def highlight_citations(text: str, pro_papers: list[dict], con_papers: list[dict
         highlighted_paragraphs.append(" ".join(highlighted_sentences))
 
     return "\n".join(highlighted_paragraphs)
+
+
+# ── VIETNAMESE TRANSLATION BLOCK ──────────────────────────────
+
+def vi_block_html(text: str) -> str:
+    """Khối bản dịch tiếng Việt, đặt bên trong thẻ turn/verdict (cùng phong cách)."""
+    body = html.escape(text).replace("\n", "<br>")
+    return (
+        '<div class="vi-block">'
+        '<span class="vi-label">Tiếng Việt</span>'
+        f'<div class="vi-body">{body}</div>'
+        '</div>'
+    )
 
 
 # ── PAPER COLUMN RENDERER ─────────────────────────────────────
@@ -929,6 +943,49 @@ section[data-testid="stSidebar"] [data-testid="stExpander"] summary span {
     overflow-wrap: break-word;
 }
 
+/* --- VIETNAMESE TRANSLATION --- */
+.vi-block {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border-soft);
+}
+.vi-label {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted) !important;
+    display: block;
+    margin-bottom: 6px;
+}
+.vi-body {
+    font-family: var(--font-body);
+    font-size: 0.92rem;
+    line-height: 1.68;
+    color: var(--text-muted) !important;
+}
+.lang-tag {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--text-muted) !important;
+    border: 1px solid var(--border-soft);
+    padding: 1px 6px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+.claim-translation {
+    border-left: 3px solid var(--accent);
+    background: var(--bg-card);
+    padding: 10px 14px;
+    margin: 4px 0 12px 0;
+    font-family: var(--font-body);
+    font-size: 0.92rem;
+    line-height: 1.6;
+}
+
 /* --- CONSENSUS METRICS --- */
 .quadrant-card {
     background: var(--bg-card);
@@ -1278,12 +1335,12 @@ with st.sidebar:
     max_tokens = st.number_input("Max tokens/turn", min_value=100, max_value=800, value=int(debate_settings.get("max_tokens", 300)), step=50)
 
     # ── LANGUAGE ──────────────────────────────────────────────
-    st.markdown('<div class="sidebar-section">Ngôn ngữ / Language</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section">Language</div>', unsafe_allow_html=True)
     show_vietnamese = st.checkbox(
-        "Dịch kết quả sang tiếng Việt",
+        "Vietnamese Translation",
         value=True,
     )
-    st.markdown('<p class="module-desc">Thêm bản dịch tiếng Việt dưới mỗi lượt tranh biện và phán quyết. Claim tiếng Việt luôn được tự động dịch sang tiếng Anh.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="module-desc">Translate arguments and verdict into Vietnamese</p>', unsafe_allow_html=True)
 
     # ── MODULES ───────────────────────────────────────────────
     st.markdown('<div class="sidebar-section">Modules</div>', unsafe_allow_html=True)
@@ -1391,7 +1448,7 @@ st.markdown("""
 
 # ── CLAIM INPUT ───────────────────────────────────────────────
 
-st.markdown('<span class="input-label">Tuyên bố khoa học cần kiểm chứng (tiếng Việt hoặc tiếng Anh) · Scientific claim to verify</span>', unsafe_allow_html=True)
+st.markdown('<span class="input-label">Scientific claim to verify<span class="lang-tag">EN · VI</span></span>', unsafe_allow_html=True)
 
 claim = st.text_area(
     label="claim_input",
@@ -1399,7 +1456,7 @@ claim = st.text_area(
     value="",
     height=90,
     max_chars=500,
-    placeholder="Nhập tuyên bố khoa học bằng tiếng Việt hoặc tiếng Anh (tối đa 500 ký tự) — ví dụ: 'Vitamin C giúp phòng ngừa cảm lạnh.' hoặc 'Vitamin C prevents the common cold.'",
+    placeholder="Enter a scientific claim to verify (max 500 characters) — e.g., 'Vitamin C prevents the common cold.'",
 )
 
 start = st.button("Initiate Debate", type="primary", use_container_width=True)
@@ -1409,7 +1466,7 @@ start = st.button("Initiate Debate", type="primary", use_container_width=True)
 
 if start:
     if not claim.strip():
-        st.error("Vui lòng nhập tuyên bố khoa học trước khi bắt đầu. / Please enter a scientific claim.")
+        st.error("Please enter a scientific claim before initiating the debate.")
         st.stop()
 
     pre_retrieved_pro = None
@@ -1474,14 +1531,17 @@ if start:
     # ── VIETNAMESE CLAIM → ENGLISH ────────────────────────────
     original_claim = claim.strip()
     if is_vietnamese(original_claim):
-        with st.spinner("Đang dịch tuyên bố sang tiếng Anh..."):
+        with st.spinner("Translating claim to English..."):
             claim, was_translated = translate_claim_to_english(original_claim, translator_llm)
         if not was_translated:
-            st.error("Không dịch được tuyên bố sang tiếng Anh (có thể do giới hạn API). Vui lòng thử lại sau ít giây.")
+            st.error("Could not translate the claim to English (possibly an API rate limit). Please retry in a few seconds.")
             st.stop()
-        st.info(
-            f"**Tuyên bố gốc (tiếng Việt):** {original_claim}\n\n"
-            f"**Bản dịch tiếng Anh dùng để kiểm chứng:** {claim}"
+        st.markdown(
+            f'<div class="claim-translation">'
+            f'<span class="vi-label">Translated from Vietnamese</span>'
+            f'{html.escape(claim)}'
+            f'</div>',
+            unsafe_allow_html=True,
         )
 
     debate = Debate(
@@ -1577,10 +1637,14 @@ if start:
 
             stream_typewriter(card_placeholder, turn.content, full_card_html)
             if show_vietnamese and not turn.filtered_out:
-                with st.spinner("Đang dịch sang tiếng Việt..."):
+                # Re-render the same card with the translation appended inside it
+                with st.spinner("Translating to Vietnamese..."):
                     vi_text = translate_to_vietnamese(turn.content, translator_llm)
-                with st.expander(f"Bản dịch tiếng Việt — {role_label}, vòng {turn.round_num}", expanded=True):
-                    st.markdown(vi_text or "_Không dịch được lượt này (có thể do giới hạn API)._")
+                if vi_text:
+                    card_placeholder.markdown(
+                        full_card_html[:-len("</div>")] + vi_block_html(vi_text) + "</div>",
+                        unsafe_allow_html=True,
+                    )
             st.markdown('<div class="turn-spacer"></div>', unsafe_allow_html=True)
 
     def on_consensus(round_num, consensus):
@@ -1617,8 +1681,8 @@ if start:
                 # 🔵 FINAL: Full ConsensusMetrics object (final round or early stop)
                 st.success(
                     f"✅ **Round {round_num} — Final Consensus Metrics**\n\n"
-                    f"- **Consensus Level**: {consensus.consensus_level} ({LEVEL_VI.get(consensus.consensus_level, '')})\n"
-                    f"- **Quadrant**: {consensus.consensus_quadrant} ({QUADRANT_VI.get(consensus.consensus_quadrant, '')})\n"
+                    f"- **Consensus Level**: {consensus.consensus_level}\n"
+                    f"- **Quadrant**: {consensus.consensus_quadrant}\n"
                     f"- **JSD (Pro/Con Disagreement)**: {consensus.jsd:.3f}\n"
                     f"- **Entropy (Judge Stability)**: {consensus.normalized_entropy:.2f}\n"
                     f"- **Calibrated Confidence**: {consensus.calibrated_confidence:.2f}"
@@ -1798,6 +1862,14 @@ if start:
         con_papers = pre_retrieved_con.get("papers", []) if (use_rag and pre_retrieved_con) else []
         highlighted_justification = highlight_citations(v.justification, pro_papers, con_papers)
 
+        verdict_vi_html = ""
+        if show_vietnamese or is_vietnamese(original_claim):
+            with st.spinner("Translating verdict to Vietnamese..."):
+                vi_justification = translate_to_vietnamese(v.justification, translator_llm)
+            verdict_vi_html = vi_block_html(
+                f"Phán quyết: {VERDICT_VI.get(v.verdict, v.verdict)}.\n{vi_justification or ''}".strip()
+            )
+
         st.markdown(f"""
 <div class="verdict-card {v_class}">
     <span class="verdict-label">Verdict</span>
@@ -1818,19 +1890,9 @@ if start:
     </div>
     <span class="verdict-justification-label">Judge Justification</span>
     <div class="verdict-justification-body">{highlighted_justification}</div>
+    {verdict_vi_html}
 </div>
 """, unsafe_allow_html=True)
-
-        if show_vietnamese or is_vietnamese(original_claim):
-            with st.spinner("Đang dịch lý giải của Judge..."):
-                vi_justification = translate_to_vietnamese(v.justification, translator_llm)
-            st.markdown(
-                f"#### Phán quyết: {v.verdict} — {VERDICT_VI.get(v.verdict, '')}\n"
-                f"**Độ tin cậy:** {v.confidence:.0%}  \n"
-                f"**Tuyên bố:** {original_claim}"
-            )
-            st.markdown("**Lý giải của Judge (tiếng Việt):**")
-            st.markdown(vi_justification or "_Không dịch được lý giải (có thể do giới hạn API)._")
 
         if result.parallel_opening_used:
             st.caption("Parallel opening was used for this debate.")
@@ -1954,12 +2016,16 @@ if start:
             font=dict(family="JetBrains Mono, monospace", size=12, color="#0F0F1A"),
         )
         st.plotly_chart(fig_q, use_container_width=True)
-        st.markdown(
-            f"**Vị trí trên bản đồ:** {c.consensus_quadrant} — {QUADRANT_VI.get(c.consensus_quadrant, '')} "
-            f"(mức đồng thuận: {LEVEL_VI.get(c.consensus_level, c.consensus_level)}). "
-            f"Trục ngang = độ bất định của Judge (Entropy = {c.normalized_entropy:.2f}); "
-            f"trục dọc = mức bất đồng giữa PRO và CON (JSD = {c.jsd:.3f})."
-        )
+        if show_vietnamese:
+            st.markdown(
+                vi_block_html(
+                    f"Vị trí: {QUADRANT_VI.get(c.consensus_quadrant, c.consensus_quadrant)} "
+                    f"(mức đồng thuận {LEVEL_VI.get(c.consensus_level, c.consensus_level).lower()}). "
+                    f"Trục ngang là độ bất định của Judge (Entropy = {c.normalized_entropy:.2f}); "
+                    f"trục dọc là mức bất đồng giữa PRO và CON (JSD = {c.jsd:.3f})."
+                ),
+                unsafe_allow_html=True,
+            )
 
     if not compute_uncertainty and not result.consensus:
         st.info(
