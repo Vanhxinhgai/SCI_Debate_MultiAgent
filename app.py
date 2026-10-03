@@ -7,10 +7,12 @@ import html
 import os
 import re
 import time
+from types import SimpleNamespace
 import streamlit as st
 import plotly.graph_objects as go
 from scidebate import Debate, ConsensusMetrics, load_config
 from scidebate.llms import OllamaLLM, OpenRouterLLM, GroqLLM
+from scidebate.history import build_record, delete_run, list_runs, load_run, save_run
 from scidebate.translation import (
     LEVEL_VI, QUADRANT_VI, VERDICT_VI,
     is_vietnamese, translate_claim_to_english, translate_to_vietnamese,
@@ -117,6 +119,52 @@ def vi_block_html(text: str) -> str:
     )
 
 
+# ── TURN CARD ─────────────────────────────────────────────────
+
+def turn_card_html(turn, pro_papers: list[dict], con_papers: list[dict], use_dar: bool, vi_text: str | None = None) -> str:
+    """HTML of one transcript turn. `turn` needs: round_num, speaker, model, content,
+    filtered_out, filter_reason (a Turn or a SimpleNamespace from saved history)."""
+    highlighted_content = highlight_citations(turn.content, pro_papers, con_papers)
+
+    if turn.filtered_out:
+        role_key, role_label = "filtered", "FILTERED"
+    elif turn.speaker == "PRO":
+        role_key, role_label = "pro", "PRO"
+    elif turn.speaker == "CON":
+        role_key, role_label = "con", "CON"
+    else:
+        role_key, role_label = "judge", "JUDGE"
+
+    filter_tag = '<span class="tag-filtered">DAR FILTERED</span>' if turn.filtered_out else ""
+    retained_tag = (
+        '<span class="tag-retained">DAR RETAINED</span>'
+        if (use_dar and turn.filter_reason and not turn.filtered_out) else ""
+    )
+    meta_text = (
+        f"Round {turn.round_num}"
+        if role_key in ("pro", "con")
+        else f"Round {turn.round_num}&nbsp;&nbsp;&middot;&nbsp;&nbsp;{turn.model}"
+    )
+    header_html = (
+        f'<div class="turn-header-row">'
+        f'<span class="turn-role {role_key}">{role_label}</span>'
+        f'<span class="turn-meta">{meta_text}</span>'
+        f'{filter_tag}{retained_tag}'
+        f'</div>'
+    )
+    if turn.filtered_out:
+        reason_html = (
+            f'<div class="turn-filter-reason">Filtered: {turn.filter_reason}</div>'
+            if turn.filter_reason else ""
+        )
+        body_html = f'<div class="turn-body turn-body-filtered">{highlighted_content}</div>{reason_html}'
+    else:
+        body_html = f'<div class="turn-body">{highlighted_content}</div>'
+
+    vi_html = vi_block_html(vi_text) if (vi_text and not turn.filtered_out) else ""
+    return f'<div class="turn-card role-{role_key}">{header_html}{body_html}{vi_html}</div>'
+
+
 # ── PAPER COLUMN RENDERER ─────────────────────────────────────
 
 def render_papers_column(
@@ -208,6 +256,242 @@ def render_papers_column(
                         st.markdown(f"- {cit}")
                 else:
                     st.markdown("*Not explicitly cited in the debate.*")
+
+
+# ── RESULT SECTIONS (shared by live debate and saved history) ─
+
+SOURCE_LABELS = {"hybrid": "SciFact + arXiv", "scifact": "SciFact", "arxiv": "arXiv"}
+
+
+def render_evidence(pro_papers, con_papers, source_label, transcript=None, justification=None):
+    st.markdown(
+        f'<span class="section-heading-mono">Evidence</span>'
+        f'<div class="section-heading">{source_label} — Literature with Citations</div>',
+        unsafe_allow_html=True,
+    )
+    col1, col2 = st.columns(2)
+    with col1:
+        render_papers_column(
+            pro_papers, "PRO — Supporting Evidence", is_pro=True,
+            result_transcript=transcript, verdict_justification=justification,
+        )
+    with col2:
+        render_papers_column(
+            con_papers, "CON — Opposing Evidence", is_pro=False,
+            result_transcript=transcript, verdict_justification=justification,
+        )
+    st.divider()
+
+
+def render_verdict(v, elapsed_seconds, num_rounds, pro_papers, con_papers, vi_justification=None, show_vi=False):
+    """`v` needs: verdict, confidence, justification, raw_output."""
+    st.markdown(
+        '<span class="section-heading-mono">Judgment</span>'
+        '<div class="section-heading">Final Verdict</div>',
+        unsafe_allow_html=True,
+    )
+    v_class = (
+        "supported"    if v.verdict == "SUPPORTED"    else
+        "refuted"      if v.verdict == "REFUTED"      else
+        "inconclusive"
+    )
+    v_color = (
+        "var(--pro)"   if v.verdict == "SUPPORTED"    else
+        "var(--con)"   if v.verdict == "REFUTED"      else
+        "var(--judge)"
+    )
+    highlighted_justification = highlight_citations(v.justification, pro_papers, con_papers)
+    verdict_vi_html = ""
+    if show_vi:
+        verdict_vi_html = vi_block_html(
+            f"Phán quyết: {VERDICT_VI.get(v.verdict, v.verdict)}.\n{vi_justification or ''}".strip()
+        )
+
+    st.markdown(f"""
+<div class="verdict-card {v_class}">
+    <span class="verdict-label">Verdict</span>
+    <div class="verdict-result {v_class}">{v.verdict}</div>
+    <div class="verdict-stats">
+        <div>
+            <span class="verdict-stat-label">Confidence</span>
+            <span class="verdict-stat-value" style="color:{v_color}">{v.confidence:.0%}</span>
+        </div>
+        <div>
+            <span class="verdict-stat-label">Elapsed</span>
+            <span class="verdict-stat-value">{elapsed_seconds:.1f}s</span>
+        </div>
+        <div>
+            <span class="verdict-stat-label">Rounds</span>
+            <span class="verdict-stat-value">{num_rounds}</span>
+        </div>
+    </div>
+    <span class="verdict-justification-label">Judge Justification</span>
+    <div class="verdict-justification-body">{highlighted_justification}</div>
+    {verdict_vi_html}
+</div>
+""", unsafe_allow_html=True)
+
+    with st.expander("Raw judge output"):
+        st.code(v.raw_output)
+
+
+def render_consensus_map(c, show_vi=False):
+    """`c` needs: consensus_level, consensus_quadrant, normalized_entropy, jsd."""
+    st.markdown(
+        '<span class="section-heading-mono">Analysis</span>'
+        '<div class="section-heading">Consensus Metrics</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Entropy measures verdict stability across repeated judge samples. "
+        "JSD measures divergence between PRO and CON verdict distributions. "
+        "Calibrated confidence combines both."
+    )
+    st.markdown(
+        '<div class="section-heading" style="font-size:1.1rem;margin-top:8px">Consensus Quadrant Map</div>',
+        unsafe_allow_html=True,
+    )
+
+    fig_q = go.Figure()
+    quadrant_labels = [
+        (0.25, 0.75, "Genuine<br>Controversy"),
+        (0.75, 0.75, "Confused /<br>Insufficient"),
+        (0.25, 0.25, "Strong<br>Consensus"),
+        (0.75, 0.25, "Aligned<br>Uncertainty"),
+    ]
+    for qx, qy, qt in quadrant_labels:
+        fig_q.add_annotation(
+            x=qx, y=qy, text=qt,
+            font=dict(size=13, color="rgba(15,15,26,0.40)", family="JetBrains Mono, monospace"),
+            showarrow=False,
+        )
+    fig_q.add_hline(y=0.4, line_dash="dot", line_color="rgba(15,15,26,0.45)", line_width=2)
+    fig_q.add_vline(x=0.5, line_dash="dot", line_color="rgba(15,15,26,0.45)", line_width=2)
+
+    level_color = {"HIGH": "#065F46", "MEDIUM": "#78350F", "LOW": "#991B1B"}
+    fig_q.add_trace(go.Scatter(
+        x=[c.normalized_entropy],
+        y=[c.jsd],
+        mode="markers+text",
+        marker=dict(
+            size=24,
+            color=level_color.get(c.consensus_level, "#6B6670"),
+            line=dict(width=3, color="#FFFFFF"),
+        ),
+        text=[c.consensus_level],
+        textposition="top center",
+        textfont=dict(
+            size=13,
+            family="JetBrains Mono, monospace",
+            color=level_color.get(c.consensus_level, "#6B6670"),
+        ),
+        name="Current debate",
+    ))
+    fig_q.update_layout(
+        xaxis=dict(
+            title=dict(text="Entropy (normalized)  →", font=dict(size=13, color="#0F0F1A")),
+            range=[0, 1],
+            autorange=False,
+            tickfont=dict(size=12, color="#0F0F1A"),
+            gridcolor="rgba(15,15,26,0.12)",
+            zerolinecolor="rgba(15,15,26,0.25)",
+            showgrid=True,
+        ),
+        yaxis=dict(
+            title=dict(text="JSD (disagreement)  →", font=dict(size=13, color="#0F0F1A")),
+            range=[0, 1],
+            autorange=False,
+            tickfont=dict(size=12, color="#0F0F1A"),
+            gridcolor="rgba(15,15,26,0.12)",
+            zerolinecolor="rgba(15,15,26,0.25)",
+            showgrid=True,
+        ),
+        height=420,
+        margin=dict(t=20, b=50, l=10, r=10),
+        showlegend=False,
+        plot_bgcolor="#FFFFFF",
+        paper_bgcolor="#F8F7F2",
+        font=dict(family="JetBrains Mono, monospace", size=12, color="#0F0F1A"),
+    )
+    st.plotly_chart(fig_q, use_container_width=True)
+    if show_vi:
+        st.markdown(
+            vi_block_html(
+                f"Vị trí: {QUADRANT_VI.get(c.consensus_quadrant, c.consensus_quadrant)} "
+                f"(mức đồng thuận {LEVEL_VI.get(c.consensus_level, c.consensus_level).lower()}). "
+                f"Trục ngang là độ bất định của Judge (Entropy = {c.normalized_entropy:.2f}); "
+                f"trục dọc là mức bất đồng giữa PRO và CON (JSD = {c.jsd:.3f})."
+            ),
+            unsafe_allow_html=True,
+        )
+
+
+def render_saved_run(rec: dict, show_vi: bool) -> None:
+    """Re-display a saved debate from History — no API calls."""
+    settings = rec.get("settings") or {}
+    models = settings.get("models") or {}
+    created = rec.get("created_at", "").replace("T", " ")
+    english = rec.get("claim_english", "")
+    original = rec.get("claim_original", english)
+
+    translated_html = (
+        f'<div class="vi-body" style="margin-top:6px">EN: {html.escape(english)}</div>'
+        if original != english else ""
+    )
+    config_bits = [
+        f"PRO {models.get('pro', '?')}",
+        f"CON {models.get('con', '?')}",
+        f"JUDGE {models.get('judge', '?')}",
+        f"{settings.get('max_rounds', '?')} rounds",
+    ]
+    if settings.get("use_rag"):
+        config_bits.append(f"{SOURCE_LABELS.get(settings.get('rag_source'), settings.get('rag_source'))} · {settings.get('rag_max_results')} docs")
+    st.markdown(
+        f'<div class="claim-translation">'
+        f'<span class="vi-label">Saved debate · {html.escape(created)}</span>'
+        f'{html.escape(original)}'
+        f'{translated_html}'
+        f'<div class="turn-meta" style="margin-top:8px">{html.escape(" · ".join(config_bits))}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+    if st.button("Close saved debate", key="close_saved"):
+        st.session_state.pop("history_view", None)
+        st.rerun()
+
+    pro_papers = rec.get("pro_papers") or []
+    con_papers = rec.get("con_papers") or []
+    transcript = [SimpleNamespace(**t) for t in rec.get("transcript") or []]
+    verdict = SimpleNamespace(**rec["verdict"]) if rec.get("verdict") else None
+
+    st.divider()
+    if pro_papers or con_papers:
+        render_evidence(
+            pro_papers, con_papers,
+            SOURCE_LABELS.get(settings.get("rag_source"), "Retrieved"),
+            transcript=transcript,
+            justification=verdict.justification if verdict else None,
+        )
+
+    st.markdown('<div class="section-heading">Debate Transcript</div>', unsafe_allow_html=True)
+    for t in transcript:
+        st.markdown(
+            turn_card_html(t, pro_papers, con_papers, settings.get("use_dar", False),
+                           vi_text=getattr(t, "vi", None) if show_vi else None),
+            unsafe_allow_html=True,
+        )
+        st.markdown('<div class="turn-spacer"></div>', unsafe_allow_html=True)
+
+    if verdict:
+        render_verdict(
+            verdict, rec.get("elapsed_seconds", 0.0), rec.get("num_rounds", 0),
+            pro_papers, con_papers,
+            vi_justification=getattr(verdict, "vi", None),
+            show_vi=show_vi and bool(getattr(verdict, "vi", None)),
+        )
+
+    if rec.get("consensus"):
+        render_consensus_map(SimpleNamespace(**rec["consensus"]), show_vi=show_vi)
 
 
 # ── LLM FACTORY ───────────────────────────────────────────────
@@ -1443,6 +1727,32 @@ with st.sidebar:
         uncertainty_mode = "Use same models as debate"
         uncertainty_model = uncertainty_settings.get("uncertainty_model", "qwen2.5:3b")
 
+    # ── HISTORY ───────────────────────────────────────────────
+    st.markdown('<div class="sidebar-section">History</div>', unsafe_allow_html=True)
+    saved_runs = list_runs()
+    if not saved_runs:
+        st.markdown('<p class="module-desc" style="padding-left:0">No saved debates yet</p>', unsafe_allow_html=True)
+    else:
+        run_labels = {
+            r["id"]: f'{r["created_at"][5:16].replace("T", " ")} · {r["verdict"]} · {r["claim"][:48]}{"…" if len(r["claim"]) > 48 else ""}'
+            for r in saved_runs
+        }
+        selected_run = st.selectbox(
+            "Saved debates",
+            list(run_labels),
+            format_func=run_labels.get,
+            index=None,
+            placeholder=f"{len(saved_runs)} saved — select one",
+        )
+        hcol1, hcol2 = st.columns(2)
+        if hcol1.button("View", disabled=selected_run is None, use_container_width=True):
+            st.session_state["history_view"] = selected_run
+        if hcol2.button("Delete", disabled=selected_run is None, use_container_width=True):
+            delete_run(selected_run)
+            if st.session_state.get("history_view") == selected_run:
+                st.session_state.pop("history_view", None)
+            st.rerun()
+
 
 
 # ── MAIN CONTENT ──────────────────────────────────────────────
@@ -1473,6 +1783,7 @@ start = st.button("Initiate Debate", type="primary", use_container_width=True)
 # ── DEBATE EXECUTION ──────────────────────────────────────────
 
 if start:
+    st.session_state.pop("history_view", None)
     if not claim.strip():
         st.error("Please enter a scientific claim before initiating the debate.")
         st.stop()
@@ -1579,31 +1890,12 @@ if start:
     st.markdown('<div class="section-heading">Debate Transcript</div>', unsafe_allow_html=True)
     transcript_container = st.container()
 
+    turn_translations = {}  # id(turn) → Vietnamese text, saved to History
+
     def on_turn(turn):
         with transcript_container:
             pro_papers = pre_retrieved_pro.get("papers", []) if (use_rag and pre_retrieved_pro) else []
             con_papers = pre_retrieved_con.get("papers", []) if (use_rag and pre_retrieved_con) else []
-            highlighted_content = highlight_citations(turn.content, pro_papers, con_papers)
-
-            if turn.filtered_out:
-                role_key   = "filtered"
-                role_label = "FILTERED"
-            elif turn.speaker == "PRO":
-                role_key   = "pro"
-                role_label = "PRO"
-            elif turn.speaker == "CON":
-                role_key   = "con"
-                role_label = "CON"
-            else:
-                role_key   = "judge"
-                role_label = "JUDGE"
-
-            filter_tag   = '<span class="tag-filtered">DAR FILTERED</span>' if turn.filtered_out else ""
-            retained_tag = (
-                '<span class="tag-retained">DAR RETAINED</span>'
-                if (use_dar and turn.filter_reason and not turn.filtered_out) else ""
-            )
-
             card_placeholder = st.empty()
 
             def stream_typewriter(placeholder, raw, full_card_html):
@@ -1614,43 +1906,15 @@ if start:
                 placeholder.write_stream(gen())
                 placeholder.markdown(full_card_html, unsafe_allow_html=True)
 
-            meta_text = (
-                f"Round {turn.round_num}"
-                if role_key in ("pro", "con")
-                else f"Round {turn.round_num}&nbsp;&nbsp;&middot;&nbsp;&nbsp;{turn.model}"
-            )
-            header_html = (
-                f'<div class="turn-header-row">'
-                f'<span class="turn-role {role_key}">{role_label}</span>'
-                f'<span class="turn-meta">{meta_text}</span>'
-                f'{filter_tag}{retained_tag}'
-                f'</div>'
-            )
-
-            if turn.filtered_out:
-                reason_html = (
-                    f'<div class="turn-filter-reason">Filtered: {turn.filter_reason}</div>'
-                    if turn.filter_reason else ""
-                )
-                body_html = f'<div class="turn-body turn-body-filtered">{highlighted_content}</div>{reason_html}'
-            else:
-                body_html = f'<div class="turn-body">{highlighted_content}</div>'
-
-            full_card_html = (
-                f'<div class="turn-card role-{role_key}">'
-                f'{header_html}'
-                f'{body_html}'
-                f'</div>'
-            )
-
-            stream_typewriter(card_placeholder, turn.content, full_card_html)
+            stream_typewriter(card_placeholder, turn.content, turn_card_html(turn, pro_papers, con_papers, use_dar))
             if show_vietnamese and not turn.filtered_out:
                 # Re-render the same card with the translation appended inside it
                 with st.spinner("Translating to Vietnamese..."):
                     vi_text = translate_to_vietnamese(turn.content, translator_llm)
                 if vi_text:
+                    turn_translations[id(turn)] = vi_text
                     card_placeholder.markdown(
-                        full_card_html[:-len("</div>")] + vi_block_html(vi_text) + "</div>",
+                        turn_card_html(turn, pro_papers, con_papers, use_dar, vi_text=vi_text),
                         unsafe_allow_html=True,
                     )
             st.markdown('<div class="turn-spacer"></div>', unsafe_allow_html=True)
@@ -1833,93 +2097,30 @@ if start:
             st.stop()
 
     # ── RE-RENDER RAG WITH CITATIONS ──────────────────────────
+    pro_papers = pre_retrieved_pro.get("papers", []) if (use_rag and pre_retrieved_pro) else []
+    con_papers = pre_retrieved_con.get("papers", []) if (use_rag and pre_retrieved_con) else []
     if use_rag:
-        pro_papers = pre_retrieved_pro.get("papers", []) if pre_retrieved_pro else []
-        con_papers = pre_retrieved_con.get("papers", []) if pre_retrieved_con else []
-        source_label = {"hybrid": "SciFact + arXiv", "scifact": "SciFact", "arxiv": "arXiv"}.get(rag_source, rag_source)
-
         with rag_placeholder.container():
-            st.markdown(
-                f'<span class="section-heading-mono">Evidence</span>'
-                f'<div class="section-heading">{source_label} — Literature with Citations</div>',
-                unsafe_allow_html=True,
+            render_evidence(
+                pro_papers, con_papers, SOURCE_LABELS.get(rag_source, rag_source),
+                transcript=result.transcript,
+                justification=result.verdict.justification if result.verdict else None,
             )
-            col1, col2 = st.columns(2)
-            with col1:
-                render_papers_column(
-                    pro_papers, "PRO — Supporting Evidence", is_pro=True,
-                    result_transcript=result.transcript,
-                    verdict_justification=result.verdict.justification if result.verdict else None,
-                )
-            with col2:
-                render_papers_column(
-                    con_papers, "CON — Opposing Evidence", is_pro=False,
-                    result_transcript=result.transcript,
-                    verdict_justification=result.verdict.justification if result.verdict else None,
-                )
-            st.divider()
 
     # ── VERDICT ───────────────────────────────────────────────
-    st.markdown(
-        '<span class="section-heading-mono">Judgment</span>'
-        '<div class="section-heading">Final Verdict</div>',
-        unsafe_allow_html=True,
-    )
-
+    vi_justification = None
     if result.verdict:
         v = result.verdict
-        v_class = (
-            "supported"    if v.verdict == "SUPPORTED"    else
-            "refuted"      if v.verdict == "REFUTED"      else
-            "inconclusive"
-        )
-        v_color = (
-            "var(--pro)"   if v.verdict == "SUPPORTED"    else
-            "var(--con)"   if v.verdict == "REFUTED"      else
-            "var(--judge)"
-        )
-
-        pro_papers = pre_retrieved_pro.get("papers", []) if (use_rag and pre_retrieved_pro) else []
-        con_papers = pre_retrieved_con.get("papers", []) if (use_rag and pre_retrieved_con) else []
-        highlighted_justification = highlight_citations(v.justification, pro_papers, con_papers)
-
-        verdict_vi_html = ""
-        if show_vietnamese or is_vietnamese(original_claim):
+        show_vi_verdict = show_vietnamese or is_vietnamese(original_claim)
+        if show_vi_verdict:
             with st.spinner("Translating verdict to Vietnamese..."):
                 vi_justification = translate_to_vietnamese(v.justification, translator_llm)
-            verdict_vi_html = vi_block_html(
-                f"Phán quyết: {VERDICT_VI.get(v.verdict, v.verdict)}.\n{vi_justification or ''}".strip()
-            )
-
-        st.markdown(f"""
-<div class="verdict-card {v_class}">
-    <span class="verdict-label">Verdict</span>
-    <div class="verdict-result {v_class}">{v.verdict}</div>
-    <div class="verdict-stats">
-        <div>
-            <span class="verdict-stat-label">Confidence</span>
-            <span class="verdict-stat-value" style="color:{v_color}">{v.confidence:.0%}</span>
-        </div>
-        <div>
-            <span class="verdict-stat-label">Elapsed</span>
-            <span class="verdict-stat-value">{result.elapsed_seconds:.1f}s</span>
-        </div>
-        <div>
-            <span class="verdict-stat-label">Rounds</span>
-            <span class="verdict-stat-value">{result.num_rounds}</span>
-        </div>
-    </div>
-    <span class="verdict-justification-label">Judge Justification</span>
-    <div class="verdict-justification-body">{highlighted_justification}</div>
-    {verdict_vi_html}
-</div>
-""", unsafe_allow_html=True)
-
+        render_verdict(
+            v, result.elapsed_seconds, result.num_rounds, pro_papers, con_papers,
+            vi_justification=vi_justification, show_vi=show_vi_verdict,
+        )
         if result.parallel_opening_used:
             st.caption("Parallel opening was used for this debate.")
-
-        with st.expander("Raw judge output"):
-            st.code(v.raw_output)
 
     # ── CONSENSUS METRICS ─────────────────────────────────────
     consensus_error = getattr(result, '_consensus_error', None)
@@ -1936,120 +2137,48 @@ if start:
             st.warning(f"Consensus sampling skipped: {consensus_error[:120]}")
 
     if result.consensus:
-        st.markdown(
-            '<span class="section-heading-mono">Analysis</span>'
-            '<div class="section-heading">Consensus Metrics</div>',
-            unsafe_allow_html=True,
-        )
-        st.caption(
-            "Entropy measures verdict stability across repeated judge samples. "
-            "JSD measures divergence between PRO and CON verdict distributions. "
-            "Calibrated confidence combines both."
-        )
-
-        c = result.consensus
-
-#         col1, col2, col3, col4 = st.columns(4)
-#         with col1:
-#             st.metric("Consensus Level",       c.consensus_level,             help="Overall scientific consensus strength")
-#         with col2:
-#             st.metric("Entropy (Judge)",       f"{c.normalized_entropy:.2f}", help="Verdict stability — 0 = stable, 1 = uncertain")
-#         with col3:
-#             st.metric("JSD (Pro vs Con)",      f"{c.jsd:.3f}",                help="Agent divergence — 0 = aligned, 1 = opposite")
-#         with col4:
-#             st.metric("Calibrated Confidence", f"{c.calibrated_confidence:.2f}", help="Final confidence adjusted by entropy and JSD")
-
-#         st.markdown(f"""
-# <div class="quadrant-card">
-#     <span class="quadrant-name">{c.consensus_quadrant}</span>
-#     <div class="quadrant-explanation">{c.explanation}</div>
-# </div>
-# """, unsafe_allow_html=True)
-
-        # ── Consensus Quadrant Map ─────────────────────────────
-        st.markdown(
-            '<div class="section-heading" style="font-size:1.1rem;margin-top:8px">Consensus Quadrant Map</div>',
-            unsafe_allow_html=True,
-        )
-
-        fig_q = go.Figure()
-
-        quadrant_labels = [
-            (0.25, 0.75, "Genuine<br>Controversy"),
-            (0.75, 0.75, "Confused /<br>Insufficient"),
-            (0.25, 0.25, "Strong<br>Consensus"),
-            (0.75, 0.25, "Aligned<br>Uncertainty"),
-        ]
-        for qx, qy, qt in quadrant_labels:
-            fig_q.add_annotation(
-                x=qx, y=qy, text=qt,
-                font=dict(size=13, color="rgba(15,15,26,0.40)", family="JetBrains Mono, monospace"),
-                showarrow=False,
-            )
-
-        fig_q.add_hline(y=0.4, line_dash="dot", line_color="rgba(15,15,26,0.45)", line_width=2)
-        fig_q.add_vline(x=0.5, line_dash="dot", line_color="rgba(15,15,26,0.45)", line_width=2)
-
-        level_color = {"HIGH": "#065F46", "MEDIUM": "#78350F", "LOW": "#991B1B"}
-        fig_q.add_trace(go.Scatter(
-            x=[c.normalized_entropy],
-            y=[c.jsd],
-            mode="markers+text",
-            marker=dict(
-                size=24,
-                color=level_color.get(c.consensus_level, "#6B6670"),
-                line=dict(width=3, color="#FFFFFF"),
-            ),
-            text=[c.consensus_level],
-            textposition="top center",
-            textfont=dict(
-                size=13,
-                family="JetBrains Mono, monospace",
-                color=level_color.get(c.consensus_level, "#6B6670"),
-            ),
-            name="Current debate",
-        ))
-
-        fig_q.update_layout(
-            xaxis=dict(
-                title=dict(text="Entropy (normalized)  →", font=dict(size=13, color="#0F0F1A")),
-                range=[0, 1],
-                autorange=False,
-                tickfont=dict(size=12, color="#0F0F1A"),
-                gridcolor="rgba(15,15,26,0.12)",
-                zerolinecolor="rgba(15,15,26,0.25)",
-                showgrid=True,
-            ),
-            yaxis=dict(
-                title=dict(text="JSD (disagreement)  →", font=dict(size=13, color="#0F0F1A")),
-                range=[0, 1],
-                autorange=False,
-                tickfont=dict(size=12, color="#0F0F1A"),
-                gridcolor="rgba(15,15,26,0.12)",
-                zerolinecolor="rgba(15,15,26,0.25)",
-                showgrid=True,
-            ),
-            height=420,
-            margin=dict(t=20, b=50, l=10, r=10),
-            showlegend=False,
-            plot_bgcolor="#FFFFFF",
-            paper_bgcolor="#F8F7F2",
-            font=dict(family="JetBrains Mono, monospace", size=12, color="#0F0F1A"),
-        )
-        st.plotly_chart(fig_q, use_container_width=True)
-        if show_vietnamese:
-            st.markdown(
-                vi_block_html(
-                    f"Vị trí: {QUADRANT_VI.get(c.consensus_quadrant, c.consensus_quadrant)} "
-                    f"(mức đồng thuận {LEVEL_VI.get(c.consensus_level, c.consensus_level).lower()}). "
-                    f"Trục ngang là độ bất định của Judge (Entropy = {c.normalized_entropy:.2f}); "
-                    f"trục dọc là mức bất đồng giữa PRO và CON (JSD = {c.jsd:.3f})."
-                ),
-                unsafe_allow_html=True,
-            )
+        render_consensus_map(result.consensus, show_vi=show_vietnamese)
 
     if not compute_uncertainty and not result.consensus:
         st.info(
             "Consensus metrics are disabled. To compute entropy, JSD, and calibrated confidence, "
             "enable **Consensus Metrics** in the sidebar and re-run the debate."
         )
+
+    # ── SAVE TO HISTORY ───────────────────────────────────────
+    try:
+        record = build_record(
+            result,
+            original_claim=original_claim,
+            english_claim=claim,
+            settings={
+                "agent_mode": backend_mode,
+                "models": {"pro": pro_config["model"], "con": con_config["model"], "judge": judge_config["model"]},
+                "max_rounds": max_rounds,
+                "use_rag": use_rag,
+                "rag_source": rag_source,
+                "rag_max_results": rag_max_results,
+                "use_dar": use_dar,
+                "compute_uncertainty": compute_uncertainty,
+            },
+            pro_papers=pro_papers,
+            con_papers=con_papers,
+            turn_translations=[turn_translations.get(id(t)) for t in result.transcript],
+            verdict_translation=vi_justification,
+        )
+        save_run(record)
+        st.caption("Saved to History — reopen it any time from the sidebar, no API calls needed.")
+    except Exception as e:
+        st.warning(f"Could not save this debate to History: {e}")
+
+
+# ── SAVED DEBATE VIEW (History) ───────────────────────────────
+
+if not start and st.session_state.get("history_view"):
+    saved = load_run(st.session_state["history_view"])
+    if saved is None:
+        st.session_state.pop("history_view", None)
+        st.warning("This saved debate no longer exists.")
+    else:
+        st.divider()
+        render_saved_run(saved, show_vietnamese)
