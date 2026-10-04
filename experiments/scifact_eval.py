@@ -98,6 +98,7 @@ class LLMFactory:
         self.cache_path = cache_path
         self.max_tokens = max_tokens
         self.rpm = config.get("eval_settings", {}).get("rpm", {})
+        self.created: list[CachedLLM] = []  # LLM tạo trong lượt chạy hiện tại → đếm số lời gọi
 
     def make(self, cfg: dict) -> CachedLLM:
         backend = cfg.get("backend", "Groq (cloud)")
@@ -111,7 +112,9 @@ class LLMFactory:
             inner, rpm = OllamaLLM(model=model, temperature=temp, max_tokens=self.max_tokens), 0
         else:
             raise ValueError(f"Unsupported backend: {backend}")
-        return CachedLLM(inner, cache_path=self.cache_path, rpm=rpm)
+        llm = CachedLLM(inner, cache_path=self.cache_path, rpm=rpm)
+        self.created.append(llm)
+        return llm
 
     def base(self) -> CachedLLM:
         """Base model cho baseline và Homo-MAD (mặc định: model của Pro trong heter_mad)."""
@@ -228,6 +231,10 @@ def build_report(records: dict, systems: list[str], claims: list[dict]) -> dict:
         m["macro_f1_ci95"] = bootstrap_ci(preds, gold, "macro_f1")
         m["accuracy_ci95"] = bootstrap_ci(preds, gold, "accuracy")
         m["pred_distribution"] = dict(Counter(preds))
+        calls = [records[(s, cid)].get("model_calls") for cid in claim_ids]
+        calls = [c for c in calls if c is not None]
+        m["avg_model_calls"] = round(sum(calls) / len(calls), 2) if calls else None
+        m["avg_elapsed"] = round(sum(records[(s, cid)].get("elapsed", 0.0) for cid in claim_ids) / len(claim_ids), 1)
         m["confusion_matrix"] = confusion_matrix_str(preds, gold)
         report["systems"][s] = m
         correctness[s] = [p == g for p, g in zip(preds, gold)]
@@ -261,13 +268,19 @@ def print_report(report: dict) -> None:
 def markdown_table(report: dict) -> str:
     lines = [
         f"N = {report['n_paired_claims']} claims (SciFact dev, paired)\n",
-        "| Hệ thống | Accuracy | Macro-F1 | 95% CI (Macro-F1) | ECE | McNemar p (vs SciDebate) |",
-        "|---|---|---|---|---|---|",
+        "| Hệ thống | Accuracy | Macro-F1 | 95% CI (Macro-F1) | ECE | Brier | McNemar p (vs SciDebate) |",
+        "|---|---|---|---|---|---|---|",
     ]
     for s, m in report["systems"].items():
         lo, hi = m["macro_f1_ci95"]
         p = m.get("mcnemar_vs_scidebate", {}).get("p_value", "—")
-        lines.append(f"| {s} | {m['accuracy']:.3f} | {m['macro_f1']:.3f} | [{lo:.3f}, {hi:.3f}] | {m['ece']:.3f} | {p} |")
+        lines.append(f"| {s} | {m['accuracy']:.3f} | {m['macro_f1']:.3f} | [{lo:.3f}, {hi:.3f}] "
+                     f"| {m['ece']:.3f} | {m['brier_score']:.3f} | {p} |")
+    lines += ["", "| Hệ thống | Lời gọi mô hình / claim | Thời gian / claim (s) | Phân phối dự đoán |", "|---|---|---|---|"]
+    for s, m in report["systems"].items():
+        calls = m.get("avg_model_calls")
+        lines.append(f"| {s} | {calls if calls is not None else '—'} | {m.get('avg_elapsed', '—')} "
+                     f"| {m['pred_distribution']} |")
     return "\n".join(lines)
 
 
@@ -318,6 +331,7 @@ def main():
             if s in blocked:
                 continue
             t0 = time.time()
+            factory.created = []
             base = {"system": s, "claim_id": c["id"], "claim": c["claim"], "ground_truth": c["ground_truth"]}
             try:
                 rec = {**base, **run_system(s, c["claim"], factory, config, args), "error": None}
@@ -334,6 +348,7 @@ def main():
                 rec = {**base, "error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()}
                 consecutive_errors += 1
             rec["elapsed"] = round(time.time() - t0, 1)
+            rec["model_calls"] = sum(llm.stats["requests"] for llm in factory.created)
             append_record(ckpt_path, rec)
             if rec.get("error"):
                 print(f"[{i}/{len(todo)}] {s:<16} {c['id']:>5}  ERROR {rec['error'][:120]}")

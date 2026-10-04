@@ -152,7 +152,8 @@ class CachedLLM(BaseLLM):
         self.max_retries = max_retries
         self.base_delay = base_delay
         self.max_delay = max_delay
-        self.stats = {"cache_hits": 0, "api_calls": 0, "retries": 0}
+        # requests: số lời gọi mô hình logic (tính cả cache hit) — dùng để báo chi phí mỗi claim
+        self.stats = {"requests": 0, "cache_hits": 0, "api_calls": 0, "retries": 0}
         self._occurrences: dict[str, int] = defaultdict(int)
         self._occ_lock = threading.Lock()
 
@@ -174,7 +175,8 @@ class CachedLLM(BaseLLM):
         return f"{base}:{idx}"
 
     def generate(self, messages: list[dict], **kwargs) -> LLMResponse:
-        key = self._request_key(messages, kwargs) if self.cache else None
+        self.stats["requests"] += 1
+        key =self._request_key(messages, kwargs) if self.cache else None
         if key:
             hit = self.cache.get(key)
             if hit is not None:
