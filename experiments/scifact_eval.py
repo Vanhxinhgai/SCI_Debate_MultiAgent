@@ -28,6 +28,7 @@ Gold evidence KHÔNG được dùng: retrieval là TF-IDF trên corpus (tránh l
 from __future__ import annotations
 
 import argparse
+import sys
 import json
 import random
 import time
@@ -72,11 +73,12 @@ def _gold_verdict(claim_row: dict) -> str:
     return Counter(labels).most_common(1)[0][0]
 
 
-def load_dev_claims(n: int | None, seed: int) -> list[dict]:
+def load_dev_claims(n: int | None, seed: int, split: str = "dev") -> list[dict]:
+    """split="train" dùng để thử/chỉnh prompt; split="dev" dành cho đánh giá chính thức."""
     dataset = load_scifact_dataset()
-    dev = [r for r in dataset["claims"] if r.get("_split") == "dev"]
+    dev = [r for r in dataset["claims"] if r.get("_split") == split]
     if not dev:
-        raise SystemExit("Không tìm thấy data/scifact/claims_dev.jsonl.")
+        raise SystemExit(f"Không tìm thấy data/scifact/claims_{split}.jsonl.")
     claims = [
         {"id": str(r["id"]), "claim": r["claim"], "ground_truth": _gold_verdict(r)}
         for r in sorted(dev, key=lambda r: int(r["id"]))
@@ -126,13 +128,13 @@ class LLMFactory:
 
 def _debate_kwargs(config: dict, args) -> dict:
     return dict(
-        max_rounds=config.get("debate_settings", {}).get("max_rounds", 2),
+        max_rounds=args.max_rounds or config.get("debate_settings", {}).get("max_rounds", 2),
         parallel_opening=False,
         compute_uncertainty=args.uncertainty,
         n_uncertainty_samples=config.get("uncertainty_settings", {}).get("n_samples", 4),
         enable_early_stopping=args.uncertainty,
         use_logprobs=config.get("uncertainty_settings", {}).get("use_logprobs", True),
-        use_dar=config.get("dar_settings", {}).get("enable_dar", False),
+        use_dar=args.dar,
         enable_rag=True,
         rag_max_results=args.max_results,
         rag_source=args.rag_source,
@@ -275,16 +277,22 @@ def main():
     parser = argparse.ArgumentParser(description="Evaluate on SciFact dev with checkpoint/resume")
     parser.add_argument("--n", type=int, default=100, help="Số claim (0 = toàn bộ 300)")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--split", default="dev", choices=["dev", "train"],
+                        help="train: thử prompt; dev: đánh giá chính thức")
     parser.add_argument("--systems", default=",".join(ALL_SYSTEMS))
     parser.add_argument("--config", default=str(CONFIG_PATH))
     parser.add_argument("--rag-source", default="scifact", choices=["scifact", "hybrid", "arxiv"])
     parser.add_argument("--max-results", type=int, default=None, help="Mặc định lấy từ rag_settings")
     parser.add_argument("--max-tokens", type=int, default=400)
+    parser.add_argument("--max-rounds", type=int, default=None, help="Mặc định lấy từ debate_settings")
     parser.add_argument("--uncertainty", action="store_true", help="Bật consensus map (tốn thêm nhiều request)")
+    parser.add_argument("--dar", action="store_true", help="Bật DAR filter (mỗi lượt thêm 1 lời gọi LLM)")
     parser.add_argument("--max-consecutive-errors", type=int, default=3)
     parser.add_argument("--report-only", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows console (cp1252)
 
     config = load_config(args.config)
     if args.max_results is None:
@@ -294,8 +302,9 @@ def main():
     if unknown:
         raise SystemExit(f"Hệ thống không hợp lệ: {unknown}")
 
-    claims = load_dev_claims(args.n or None, args.seed)
-    tag = f"n{len(claims)}_seed{args.seed}_{args.rag_source}"
+    claims = load_dev_claims(args.n or None, args.seed, args.split)
+    split_tag = "" if args.split == "dev" else f"{args.split}_"
+    tag = f"{split_tag}n{len(claims)}_seed{args.seed}_{args.rag_source}"
     ckpt_path = RESULTS_DIR / f"scifact_dev_{tag}.jsonl"
     records = load_records(ckpt_path)
 
@@ -304,7 +313,10 @@ def main():
         todo = [(c, s) for c in claims for s in systems if (s, c["id"]) not in records]
         print(f"[EVAL] {len(claims)} claims × {len(systems)} systems — {len(todo)} remaining → {ckpt_path}")
         consecutive_errors = 0
+        blocked: set[str] = set()  # hệ thống đã hết quota ngày → bỏ qua, các hệ thống khác chạy tiếp
         for i, (c, s) in enumerate(todo, 1):
+            if s in blocked:
+                continue
             t0 = time.time()
             base = {"system": s, "claim_id": c["id"], "claim": c["claim"], "ground_truth": c["ground_truth"]}
             try:
@@ -312,8 +324,12 @@ def main():
                 rec["correct"] = rec["predicted"] == c["ground_truth"]
                 consecutive_errors = 0
             except QuotaExhaustedError as e:
-                print(f"\n[STOP] {e}\nChạy lại cùng lệnh sau khi quota reset để tiếp tục.")
-                break
+                blocked.add(s)
+                print(f"\n[QUOTA] {s}: {str(e)[:160]}\n  -> tạm dừng {s}; chạy lại cùng lệnh sau khi quota reset để tiếp tục.")
+                if blocked >= set(systems):
+                    print("[STOP] Tất cả hệ thống đều hết quota.")
+                    break
+                continue
             except Exception as e:
                 rec = {**base, "error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()}
                 consecutive_errors += 1

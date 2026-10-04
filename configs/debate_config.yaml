@@ -116,9 +116,11 @@ rag_settings:
 eval_settings:
   # Base model cho Single-agent / RAG-only / CoT / Homo-MAD (3 agent cùng model).
   # Nên trùng với model của PRO để so sánh Homo-MAD vs Heter-MAD chỉ khác ở CON/JUDGE.
+  # = model của JUDGE trong heter_mad → Homo-MAD và SciDebate dùng cùng Judge,
+  # chỉ khác ở hai agent tranh biện (cô lập đúng tác động của tính bất đồng nhất).
   base_model:
     backend: "Groq (cloud)"
-    model: "qwen/qwen3.8-27b"
+    model: "openai/gpt-oss-120b"
     temperature: 0.0
   # Request/phút tối đa cho mỗi provider (giãn cách request, tránh lỗi 429)
   rpm:

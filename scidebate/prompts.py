@@ -90,6 +90,18 @@ CRITICAL — Counter-argument rules you MUST follow:
 Style: Direct, no preamble. Precise scientific reasoning only."""
 
 
+# Shared by the Judge and the single-LLM baselines so every system is scored against the
+# same definition of the labels. It follows the SciFact annotation scheme: the question is
+# whether the retrieved studies support or contradict the claim, NOT whether the science is
+# settled. (An earlier "require RCT/mechanistic proof" standard made the Judge answer
+# INCONCLUSIVE even when the top retrieved abstract directly reported the claimed finding.)
+VERIFICATION_STANDARD = """VERIFICATION STANDARD — this is evidence-based claim verification, not a judgement of whether the science is settled:
+- SUPPORTED: at least one cited study directly reports a finding that agrees with the claim (same intervention/exposure, outcome, direction and, if stated, population and quantity). Study limitations (small sample, observational design, no RCT, unproven mechanism) lower CONFIDENCE but do NOT turn the verdict into INCONCLUSIVE.
+- REFUTED: a cited study directly reports a finding that contradicts the claim — the opposite direction, no effect where an effect is claimed, or a different quantity/population than the claim states.
+- INCONCLUSIVE: no cited study directly addresses the claim's specific subject AND outcome (the evidence is off-topic or only tangentially related).
+- If direct evidence points both ways, choose the side with the more direct and specific evidence."""
+
+
 JUDGE_SYSTEM_PROMPT = """You are the JUDGE in a scientific fact-checking debate.
 
 Your role: Evaluate the QUALITY of evidence and logic, not the persuasiveness of arguments.
@@ -102,12 +114,7 @@ EVALUATION FRAMEWORK — apply in this order:
    - PROXY: Measures a different variable PRO re-interprets as X or Y.
    - TANGENTIAL: Different topic with a forced connection.
 3. LOGICAL ERRORS: Did PRO commit correlation-as-causation? Invent bridge concepts absent from papers? Relabel what papers actually measure?
-4. VERDICT RULES (apply strictly):
-   - SUPPORTED: Only when direct or strong partial causal evidence demonstrates the claimed mechanism.
-   - INCONCLUSIVE: When evidence is only correlational/proxy, mixed, or both sides raise valid unresolved points.
-   - REFUTED: When direct counter-evidence disproves the mechanism, or PRO's logical errors fundamentally undermine their entire case.
-   - If PRO's only evidence is proxy/indirect AND CON correctly identifies this → INCONCLUSIVE.
-   - If agents strongly disagree (JSD > 0.5) AND evidence is weak/indirect → confidence ≤ 0.5.
+4. VERDICT RULES: follow the VERIFICATION STANDARD given with each case. CON's criticisms of study quality reduce CONFIDENCE; they only change the verdict when they show the evidence does not actually address the claim, or contradicts it.
 5. UNIVERSAL CLAIMS — stricter rules apply when the claim contains "always/never/all/every":
    - SUPPORTED requires evidence consistently demonstrating the effect across ALL relevant contexts. Extremely rare.
    - REFUTED if: (a) any direct counter-evidence exists; OR (b) evidence shows the effect is conditional, capacity-limited, or tapers off — the word "always" is contradicted by any exception or limitation.
@@ -217,14 +224,15 @@ Full debate transcript:
 {debate_transcript}
 
 Evaluate the debate and produce your final verdict.
-{universal_rule}
-Your JUSTIFICATION must address: (1) what type of claim this is — causal, universal, or correlational; (2) whether PRO's key evidence is DIRECT (measures the causal relationship X→Y) or PROXY/INDIRECT (measures different variables); (3) any logical errors PRO committed — correlation presented as causation, invented bridge concepts, relabeled variables; (4) whether CON correctly identified evidence gaps; (5) why the verdict follows from evidence quality, not argument count. If PRO's evidence is only proxy or correlational and CON correctly called this out, the verdict must be INCONCLUSIVE (or REFUTED for universal claims).
 
-CONFIDENCE calibration — you MUST follow:
-- CONFIDENCE ≥ 0.80: only when direct causal evidence is clearly available and strongly supports the verdict.
-- CONFIDENCE 0.50–0.70: when evidence is indirect, proxy, or mixed; verdict is INCONCLUSIVE or weakly supported.
-- CONFIDENCE ≤ 0.50: when evidence is tangential, absent, or severely contradicted by confounders.
-- Never output INCONCLUSIVE with CONFIDENCE > 0.70 if the only evidence is proxy or correlational.
+{VERIFICATION_STANDARD}
+{universal_rule}
+Your JUSTIFICATION must address: (1) which cited study is the most direct evidence and what it actually reports; (2) whether that finding agrees with, contradicts, or does not address the claim (check intervention, outcome, direction, population, quantity); (3) which of CON's or PRO's objections are valid and whether they change the verdict or only the confidence; (4) why the verdict follows from the evidence, not from argument count.
+
+CONFIDENCE calibration:
+- ≥ 0.80: a study directly reports the claimed (or contradicting) finding and no valid objection undermines it.
+- 0.55–0.80: direct evidence exists but with real limitations, or evidence is mixed.
+- ≤ 0.55: evidence is weak, indirect, or barely addresses the claim.
 
 Output STRICTLY in this format (no extra text before or after):
 

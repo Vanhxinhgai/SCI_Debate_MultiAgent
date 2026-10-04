@@ -4,15 +4,17 @@ Run:
     streamlit run app.py
 """
 import html
+import json
 import os
 import re
 import time
+from pathlib import Path
 from types import SimpleNamespace
 import streamlit as st
 import plotly.graph_objects as go
 from scidebate import Debate, ConsensusMetrics, load_config
 from scidebate.llms import OllamaLLM, OpenRouterLLM, GroqLLM
-from scidebate.history import build_record, delete_run, list_runs, load_run, save_run
+from scidebate.history import build_record, delete_run, list_runs, load_run, record_to_markdown, save_run
 from scidebate.translation import (
     LEVEL_VI, QUADRANT_VI, VERDICT_VI,
     is_vietnamese, translate_claim_to_english, translate_to_vietnamese,
@@ -353,16 +355,22 @@ def render_consensus_map(c, show_vi=False):
     )
 
     fig_q = go.Figure()
+    # Borderline band (zone 6): within ±0.05 of either threshold
+    band = dict(fillcolor="rgba(15,15,26,0.06)", line_width=0, layer="below")
+    fig_q.add_shape(type="rect", x0=0.45, x1=0.55, y0=0, y1=1, **band)
+    fig_q.add_shape(type="rect", x0=0, x1=1, y0=0.35, y1=0.45, **band)
+
     quadrant_labels = [
-        (0.25, 0.75, "Genuine<br>Controversy"),
-        (0.75, 0.75, "Confused /<br>Insufficient"),
-        (0.25, 0.25, "Strong<br>Consensus"),
-        (0.75, 0.25, "Aligned<br>Uncertainty"),
+        (0.22, 0.75, "Genuine<br>Controversy"),
+        (0.78, 0.75, "Confused /<br>Insufficient"),
+        (0.22, 0.20, "Strong Consensus<br>· or Aligned NEI ·<br>(if verdict = NEI)"),
+        (0.78, 0.20, "Aligned<br>Uncertainty"),
+        (0.50, 0.97, "Borderline band"),
     ]
     for qx, qy, qt in quadrant_labels:
         fig_q.add_annotation(
             x=qx, y=qy, text=qt,
-            font=dict(size=13, color="rgba(15,15,26,0.40)", family="JetBrains Mono, monospace"),
+            font=dict(size=12, color="rgba(15,15,26,0.40)", family="JetBrains Mono, monospace"),
             showarrow=False,
         )
     fig_q.add_hline(y=0.4, line_dash="dot", line_color="rgba(15,15,26,0.45)", line_width=2)
@@ -414,6 +422,11 @@ def render_consensus_map(c, show_vi=False):
         font=dict(family="JetBrains Mono, monospace", size=12, color="#0F0F1A"),
     )
     st.plotly_chart(fig_q, use_container_width=True)
+    st.markdown(
+        f'<div class="quadrant-card"><span class="quadrant-name">Zone: {html.escape(c.consensus_quadrant)}</span>'
+        f'<div class="quadrant-explanation">{html.escape(getattr(c, "explanation", "") or "")}</div></div>',
+        unsafe_allow_html=True,
+    )
     if show_vi:
         st.markdown(
             vi_block_html(
@@ -492,6 +505,111 @@ def render_saved_run(rec: dict, show_vi: bool) -> None:
 
     if rec.get("consensus"):
         render_consensus_map(SimpleNamespace(**rec["consensus"]), show_vi=show_vi)
+
+    render_downloads(rec)
+
+
+def render_downloads(rec: dict) -> None:
+    """Export one debate as a Markdown report or the raw JSON record."""
+    st.markdown('<span class="vi-label" style="margin-top:12px">Export this debate</span>', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    c1.download_button(
+        "Download report (Markdown)", record_to_markdown(rec),
+        file_name=f"scidebate_{rec['id']}.md", mime="text/markdown",
+        use_container_width=True, key=f"dl_md_{rec['id']}",
+    )
+    c2.download_button(
+        "Download data (JSON)", json.dumps(rec, ensure_ascii=False, indent=2, default=str),
+        file_name=f"scidebate_{rec['id']}.json", mime="application/json",
+        use_container_width=True, key=f"dl_json_{rec['id']}",
+    )
+
+
+# ── EXPERIMENT RESULTS PAGE ───────────────────────────────────
+
+RESULTS_DIR = Path(__file__).resolve().parent / "experiments" / "results"
+SYSTEM_LABELS = {
+    "zeroshot": "Single-agent (no RAG)",
+    "ragonly": "RAG-only",
+    "cot": "CoT + RAG",
+    "homo_mad": "Homo-MAD (3× same model)",
+    "scidebate": "SciDebate (Heter-MAD)",
+    "scidebate_shared": "SciDebate − stance retrieval",
+}
+
+
+def render_experiments_page():
+    st.markdown(
+        '<span class="section-heading-mono">Evaluation</span>'
+        '<div class="section-heading">Experiment Results — SciFact</div>',
+        unsafe_allow_html=True,
+    )
+    summaries = sorted(RESULTS_DIR.glob("scifact_dev_n*_summary.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    summaries = [p for p in summaries if "train" not in p.name]
+    if not summaries:
+        st.info("No experiment results yet. Run `python -m experiments.run_until_done --n 30` to generate them.")
+        return
+
+    chosen = st.selectbox("Result file", summaries, format_func=lambda p: p.name.replace("_summary.json", ""))
+    report = json.loads(chosen.read_text(encoding="utf-8"))
+    n = report.get("n_paired_claims", 0)
+    systems = report.get("systems", {})
+    st.caption(
+        f"{n} claims from the SciFact dev split, paired across systems (every system answered the same claims). "
+        f"Gold label distribution: {report.get('gold_distribution', {})}. "
+        "Retrieval uses BM25 over the 5,183-abstract SciFact corpus; gold evidence is never shown to the agents."
+    )
+    if not systems:
+        st.warning("No claim has been completed by every system yet.")
+        return
+
+    rows = []
+    for key, m in systems.items():
+        lo, hi = m.get("macro_f1_ci95", (0, 0))
+        rows.append({
+            "System": SYSTEM_LABELS.get(key, key),
+            "Accuracy": round(m["accuracy"], 3),
+            "Macro-F1": round(m["macro_f1"], 3),
+            "Macro-F1 95% CI": f"[{lo:.3f}, {hi:.3f}]",
+            "ECE ↓": round(m["ece"], 3),
+            "Brier ↓": round(m["brier_score"], 3),
+            "McNemar p vs SciDebate": m.get("mcnemar_vs_scidebate", {}).get("p_value", "—"),
+        })
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    fig = go.Figure()
+    names = [SYSTEM_LABELS.get(k, k) for k in systems]
+    f1 = [m["macro_f1"] for m in systems.values()]
+    lo = [m["macro_f1"] - m.get("macro_f1_ci95", (0, 0))[0] for m in systems.values()]
+    hi = [m.get("macro_f1_ci95", (0, 0))[1] - m["macro_f1"] for m in systems.values()]
+    colors = ["#2B44EF" if k == "scidebate" else "#9C98A6" for k in systems]
+    fig.add_trace(go.Bar(
+        x=names, y=f1, marker_color=colors,
+        error_y=dict(type="data", symmetric=False, array=hi, arrayminus=lo, color="#0F0F1A", thickness=1.5),
+        text=[f"{v:.3f}" for v in f1], textposition="outside",
+    ))
+    fig.update_layout(
+        yaxis=dict(title="Macro-F1 (95% bootstrap CI)", range=[0, 1.05]),
+        height=380, margin=dict(t=20, b=40, l=10, r=10), showlegend=False,
+        plot_bgcolor="#FFFFFF", paper_bgcolor="#F8F7F2",
+        font=dict(family="JetBrains Mono, monospace", size=12, color="#0F0F1A"),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown('<div class="section-heading" style="font-size:1.1rem">Confusion matrices</div>', unsafe_allow_html=True)
+    cols = st.columns(2)
+    for i, (key, m) in enumerate(systems.items()):
+        with cols[i % 2]:
+            st.markdown(f"**{SYSTEM_LABELS.get(key, key)}** — predictions: {m.get('pred_distribution', {})}")
+            st.code(m.get("confusion_matrix", ""), language=None)
+
+    table_md = chosen.with_name(chosen.name.replace("_summary.json", "_table.md"))
+    dl1, dl2 = st.columns(2)
+    dl1.download_button("Download summary (JSON)", chosen.read_text(encoding="utf-8"),
+                        file_name=chosen.name, mime="application/json", use_container_width=True)
+    if table_md.exists():
+        dl2.download_button("Download table (Markdown)", table_md.read_text(encoding="utf-8"),
+                            file_name=table_md.name, mime="text/markdown", use_container_width=True)
 
 
 # ── LLM FACTORY ───────────────────────────────────────────────
@@ -1552,10 +1670,31 @@ st.markdown(_CSS, unsafe_allow_html=True)
 
 config = load_config()
 
+
+@st.cache_resource(show_spinner="Downloading SciFact corpus (first run only)...")
+def _ensure_scifact() -> bool:
+    """Fetch SciFact if missing (the dataset is not committed — needed on Streamlit Cloud)."""
+    import importlib.util
+    script = Path(__file__).resolve().parent / "scripts" / "download_scifact.py"
+    try:
+        spec = importlib.util.spec_from_file_location("download_scifact", script)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.main() == 0
+    except Exception as e:
+        print(f"[SciFact] auto-download failed: {e}")
+        return False
+
+
+_ensure_scifact()
+
 # ── SIDEBAR ───────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown('<div class="sidebar-section" style="border-top:none;padding-top:0">LLM Engine</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section" style="border-top:none;padding-top:0">View</div>', unsafe_allow_html=True)
+    page = st.radio("Page", ["Claim Verification", "Experiment Results"], label_visibility="collapsed")
+
+    st.markdown('<div class="sidebar-section">LLM Engine</div>', unsafe_allow_html=True)
 
     llm_backends_config = config.get("llm_backends", {})
     mode_val = llm_backends_config.get("mode", "Heter-MAD (different models)")
@@ -1766,16 +1905,38 @@ st.markdown("""
 
 # ── CLAIM INPUT ───────────────────────────────────────────────
 
+if page == "Experiment Results":
+    render_experiments_page()
+    st.stop()
+
 st.markdown('<span class="input-label">Scientific claim to verify<span class="lang-tag">EN · VI</span></span>', unsafe_allow_html=True)
 
 claim = st.text_area(
     label="claim_input",
     label_visibility="collapsed",
-    value="",
+    key="claim_input",
     height=90,
     max_chars=500,
     placeholder="Enter a scientific claim to verify (max 500 characters) — e.g., 'Vitamin C prevents the common cold.'",
 )
+
+# Example claims (SciFact train split — not used in the evaluation set)
+EXAMPLE_CLAIMS = [
+    ("Supported", "Amitriptyline is an effective treatment for chronic tension-type headaches."),
+    ("Refuted", "Activation of PPM1D enhances p53 function."),
+    ("Not enough info", "50% of patients exposed to radiation have activated markers of mesenchymal stem cells."),
+    ("Tiếng Việt", "Amitriptyline có hiệu quả trong điều trị đau đầu do căng thẳng mạn tính."),
+]
+
+
+def _use_example(text: str) -> None:
+    st.session_state["claim_input"] = text
+
+
+st.markdown('<span class="vi-label" style="margin-top:4px">Try an example</span>', unsafe_allow_html=True)
+example_cols = st.columns(len(EXAMPLE_CLAIMS))
+for col, (label, text) in zip(example_cols, EXAMPLE_CLAIMS):
+    col.button(label, help=text, on_click=_use_example, args=(text,), use_container_width=True, key=f"ex_{label}")
 
 start = st.button("Initiate Debate", type="primary", use_container_width=True)
 
@@ -2168,6 +2329,7 @@ if start:
         )
         save_run(record)
         st.caption("Saved to History — reopen it any time from the sidebar, no API calls needed.")
+        render_downloads(record)
     except Exception as e:
         st.warning(f"Could not save this debate to History: {e}")
 

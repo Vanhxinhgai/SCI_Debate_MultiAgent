@@ -11,13 +11,17 @@ Consensus Quadrant (2D: entropy × JSD):
          |
     Q1: Strong          Q3: Aligned
     Consensus           Uncertainty
+    (Q5: Aligned NEI
+     if verdict = INCONCLUSIVE)
          |
     Low JSD (Agreement)
 
+    Q6: Borderline — điểm nằm cách ngưỡng (entropy 0.5 / JSD 0.4) dưới 0.05.
+
 Consensus Level:
-    HIGH:   Q1 (low entropy + low JSD) → verdict ổn định, Pro/Con đồng thuận
-    LOW:    Q2 (low entropy + high JSD) → verdict rõ nhưng tranh cãi dữ dội
-    MEDIUM: Q3, Q4, hoặc borderline
+    HIGH:   Q1 (low entropy + low JSD, verdict khác INCONCLUSIVE)
+    LOW:    Q2 (tranh cãi thực sự), Q4 (mơ hồ), Q5 (cùng "không đủ bằng chứng")
+    MEDIUM: Q3, Q6
 
 Optimization: Entropy + Disagreement computation parallel (ThreadPoolExecutor).
 """
@@ -85,11 +89,41 @@ class ConsensusMetrics:
         )
 
 
-def _determine_quadrant(norm_entropy: float, jsd: float) -> str:
-    low_e = norm_entropy < 0.5
-    low_d = jsd < 0.4  # JSD thường thấp hơn raw disagreement score
+ENTROPY_THRESHOLD = 0.5   # normalized entropy of the Judge
+JSD_THRESHOLD = 0.4       # Pro vs Con divergence (JSD is typically lower than raw disagreement)
+BORDERLINE_MARGIN = 0.05  # points this close to a threshold are not classified confidently
+
+
+def _determine_quadrant(
+    norm_entropy: float,
+    jsd: float,
+    dominant_verdict: str = "",
+    pro_distribution: dict | None = None,
+    con_distribution: dict | None = None,
+) -> str:
+    """Six-zone consensus map (extends the classic 2×2 entropy × JSD map).
+
+    Zones 5 and 6 fix two failure modes of the 2×2 map:
+      - Aligned NEI: Judge, Pro and Con all settle on INCONCLUSIVE with low entropy and
+        low JSD. The 2×2 map labels this "Strong Consensus", although the agents only
+        agree that the evidence is insufficient.
+      - Borderline: a point within BORDERLINE_MARGIN of a threshold; with few samples
+        the metrics are too noisy to assign a zone confidently.
+    """
+    if (abs(norm_entropy - ENTROPY_THRESHOLD) < BORDERLINE_MARGIN
+            or abs(jsd - JSD_THRESHOLD) < BORDERLINE_MARGIN):
+        return "Borderline"
+
+    low_e = norm_entropy < ENTROPY_THRESHOLD
+    low_d = jsd < JSD_THRESHOLD
 
     if low_e and low_d:
+        agents_nei = all(
+            d and max(d, key=d.get) == "INCONCLUSIVE"
+            for d in (pro_distribution, con_distribution)
+        )
+        if dominant_verdict == "INCONCLUSIVE" or agents_nei:
+            return "Aligned NEI"
         return "Strong Consensus"
     elif low_e and not low_d:
         return "Genuine Controversy"
@@ -112,6 +146,17 @@ def _determine_consensus_level(quadrant: str) -> tuple[str, str]:
             "The judge's verdict is stable, but Pro and Con "
             "maintain strongly divergent positions (high JSD). "
             "This claim remains contentious in the literature."
+        )
+    elif quadrant == "Aligned NEI":
+        return "LOW", (
+            "Aligned 'not enough information'. Judge, Pro and Con agree — with low "
+            "uncertainty — that the evidence is insufficient. This is agreement on the "
+            "absence of evidence, not a consensus about the claim itself."
+        )
+    elif quadrant == "Borderline":
+        return "MEDIUM", (
+            "Borderline. Entropy or JSD lies within 0.05 of a decision threshold, so the "
+            "consensus zone cannot be assigned reliably from the available samples."
         )
     elif quadrant == "Aligned Uncertainty":
         return "MEDIUM", (
@@ -199,6 +244,9 @@ def compute_consensus(
     quadrant = _determine_quadrant(
         entropy_result.normalized_entropy,
         disagreement_result.jsd,
+        dominant_verdict=entropy_result.dominant_verdict,
+        pro_distribution=disagreement_result.pro_distribution.distribution,
+        con_distribution=disagreement_result.con_distribution.distribution,
     )
     level, explanation = _determine_consensus_level(quadrant)
 

@@ -135,6 +135,62 @@ def list_runs(base: str | Path | None = None) -> list[dict]:
     return sorted(runs, key=lambda r: r["created_at"], reverse=True)
 
 
+def record_to_markdown(rec: dict) -> str:
+    """Báo cáo Markdown của một lần debate (để tải về / đính kèm báo cáo)."""
+    s = rec.get("settings") or {}
+    models = s.get("models") or {}
+    v = rec.get("verdict") or {}
+    lines = [
+        "# SciDebate — Debate Report",
+        "",
+        f"- **Date:** {rec.get('created_at', '').replace('T', ' ')}",
+        f"- **Claim:** {rec.get('claim_original', '')}",
+    ]
+    if rec.get("claim_english") and rec.get("claim_english") != rec.get("claim_original"):
+        lines.append(f"- **Claim (English, used for verification):** {rec['claim_english']}")
+    lines += [
+        f"- **Models:** PRO `{models.get('pro', '?')}` · CON `{models.get('con', '?')}` · JUDGE `{models.get('judge', '?')}`",
+        f"- **Rounds:** {rec.get('num_rounds', '?')} · **Evidence:** "
+        + (f"{s.get('rag_source')} ({s.get('rag_max_results')} docs/side)" if s.get("use_rag") else "disabled"),
+        "",
+        "## Verdict",
+        "",
+        f"**{v.get('verdict', '—')}** — confidence {v.get('confidence', 0):.0%}",
+        "",
+        v.get("justification", ""),
+    ]
+    if v.get("vi"):
+        lines += ["", f"> **Tiếng Việt:** {v['vi']}"]
+
+    c = rec.get("consensus")
+    if c:
+        lines += [
+            "", "## Consensus Metrics", "",
+            f"- Zone: **{c.get('consensus_quadrant')}** (level {c.get('consensus_level')})",
+            f"- Normalized entropy (Judge): {c.get('normalized_entropy', 0):.3f}",
+            f"- JSD (PRO vs CON): {c.get('jsd', 0):.3f}",
+            f"- Calibrated confidence: {c.get('calibrated_confidence', 0):.2f}",
+        ]
+
+    lines += ["", "## Debate Transcript", ""]
+    for t in rec.get("transcript") or []:
+        tag = " *(filtered by DAR)*" if t.get("filtered_out") else ""
+        lines += [f"### Round {t.get('round_num')} — {t.get('speaker')}{tag}", "", t.get("content", "")]
+        if t.get("vi"):
+            lines += ["", f"> **Tiếng Việt:** {t['vi']}"]
+        lines.append("")
+
+    for side, key in (("PRO", "pro_papers"), ("CON", "con_papers")):
+        papers = rec.get(key) or []
+        if papers:
+            lines += [f"## Evidence — {side}", ""]
+            for i, p in enumerate(papers, 1):
+                link = f" — {p['pdf_link']}" if p.get("pdf_link") else ""
+                lines.append(f"{i}. **{p.get('title', '')}** ({p.get('source', '')}{', ' + str(p['doc_id']) if p.get('doc_id') else ''}){link}")
+            lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def delete_run(run_id: str, base: str | Path | None = None) -> bool:
     path = _path_for(run_id, base)
     if path.exists():

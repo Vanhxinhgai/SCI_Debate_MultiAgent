@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass
 
 from scidebate.llms.base import BaseLLM
+from scidebate.prompts import VERIFICATION_STANDARD
 from scidebate.tools import retrieve_evidence
 
 
@@ -26,9 +27,9 @@ VERDICT_LINE_RE = re.compile(
 )
 
 
-def _ask(llm: BaseLLM, prompt: str) -> str:
+def _ask(llm: BaseLLM, prompt: str, **kwargs) -> str:
     """Single-turn call. BaseLLM.generate expects a message list and returns LLMResponse."""
-    return llm.generate([{"role": "user", "content": prompt}]).content
+    return llm.generate([{"role": "user", "content": prompt}], **kwargs).content
 
 
 def _parse_verdict_from_text(text: str) -> tuple[str, float]:
@@ -115,6 +116,8 @@ RETRIEVED EVIDENCE:
 
 Claim: {claim}
 
+{standard}
+
 Based ONLY on the evidence above, provide your verdict as exactly one of: \
 SUPPORTED, REFUTED, or INCONCLUSIVE.
 
@@ -153,7 +156,7 @@ class RAGOnlyBaseline:
             papers = []
 
         if context.strip():
-            prompt = _RAG_ONLY_PROMPT.format(context=context, claim=claim)
+            prompt = _RAG_ONLY_PROMPT.format(context=context, claim=claim, standard=VERIFICATION_STANDARD)
         else:
             prompt = _ZERO_SHOT_PROMPT.format(claim=claim)
 
@@ -179,15 +182,20 @@ RETRIEVED EVIDENCE:
 
 Claim: {claim}
 
+{standard}
+
 Let's think step by step:
-1. Identify what the claim asserts (population, intervention/exposure, outcome, direction).
-2. For each relevant document, state whether it supports, contradicts, or does not address the claim.
-3. Weigh the evidence. If no document directly addresses the claim, the verdict is INCONCLUSIVE.
+1. Identify what the claim asserts (population, intervention/exposure, outcome, direction, quantity).
+2. For each document, write ONE short line: supports / contradicts / does not address the claim, and why.
+3. Apply the verification standard to reach a verdict.
 
 After your reasoning, end with exactly these lines:
 Verdict: <SUPPORTED|REFUTED|INCONCLUSIVE>
 Confidence: <0.0–1.0>
 """
+
+
+COT_MAX_TOKENS = 1200
 
 
 class CoTBaseline:
@@ -214,7 +222,13 @@ class CoTBaseline:
         except Exception:
             context, papers = "No evidence retrieved.", []
 
-        raw = _ask(self.llm, _COT_PROMPT.format(context=context, claim=claim))
+        # Step-by-step reasoning needs a larger budget than a direct answer: at 400 tokens the
+        # model was cut off mid-analysis before writing the "Verdict:" line.
+        raw = _ask(
+            self.llm,
+            _COT_PROMPT.format(context=context, claim=claim, standard=VERIFICATION_STANDARD),
+            max_tokens=COT_MAX_TOKENS,
+        )
         verdict, confidence = _parse_verdict_from_text(raw)
         return BaselineResult(
             claim=claim,

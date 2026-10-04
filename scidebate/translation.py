@@ -28,6 +28,8 @@ QUADRANT_VI = {
     "Genuine Controversy": "Tranh cãi thực sự",
     "Aligned Uncertainty": "Cùng bất định",
     "Confused / Insufficient Evidence": "Mơ hồ / Thiếu bằng chứng",
+    "Aligned NEI": "Cùng kết luận chưa đủ bằng chứng",
+    "Borderline": "Vùng biên (sát ngưỡng)",
 }
 
 LEVEL_VI = {"HIGH": "Cao", "MEDIUM": "Trung bình", "LOW": "Thấp"}

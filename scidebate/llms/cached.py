@@ -68,6 +68,17 @@ def _get_limiter(provider: str, rpm: float) -> _RateLimiter:
         return _LIMITERS[provider]
 
 
+_DAILY_QUOTA_MARKERS = (
+    "free-models-per-day", "openrouter_free_tier_daily",
+    "requests per day", "tokens per day", "(rpd)", "(tpd)",
+)
+
+
+def _is_daily_quota(err: Exception) -> bool:
+    msg = str(err).lower()
+    return any(m in msg for m in _DAILY_QUOTA_MARKERS)
+
+
 def _is_retryable(err: Exception) -> bool:
     status = getattr(err, "status_code", None)
     if status is None:
@@ -190,6 +201,9 @@ class CachedLLM(BaseLLM):
                 self.stats["api_calls"] += 1
                 return self.inner.generate(messages, **kwargs)
             except Exception as err:
+                if _is_daily_quota(err):
+                    # Hết quota ngày: retry chỉ tốn thời gian → dừng để chạy lại sau khi reset.
+                    raise QuotaExhaustedError(f"{self.model}: daily quota exhausted — {str(err)[:200]}") from err
                 if attempt >= self.max_retries or not _is_retryable(err):
                     raise
                 self.stats["retries"] += 1
