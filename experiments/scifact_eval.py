@@ -300,6 +300,8 @@ def main():
     parser.add_argument("--max-rounds", type=int, default=None, help="Mặc định lấy từ debate_settings")
     parser.add_argument("--uncertainty", action="store_true", help="Bật consensus map (tốn thêm nhiều request)")
     parser.add_argument("--dar", action="store_true", help="Bật DAR filter (mỗi lượt thêm 1 lời gọi LLM)")
+    parser.add_argument("--no-paired", dest="paired", action="store_false",
+                        help="Khi một hệ thống hết quota, vẫn cho các hệ thống khác chạy tiếp (mặc định: dừng cả lượt)")
     parser.add_argument("--max-consecutive-errors", type=int, default=3)
     parser.add_argument("--report-only", action="store_true")
     parser.add_argument("--verbose", action="store_true")
@@ -338,8 +340,14 @@ def main():
                 rec["correct"] = rec["predicted"] == c["ground_truth"]
                 consecutive_errors = 0
             except QuotaExhaustedError as e:
+                print(f"\n[QUOTA] {s}: {str(e)[:160]}")
+                if args.paired:
+                    # Chỉ claim mà MỌI hệ thống đều trả lời mới được so sánh: để các hệ thống
+                    # khác chạy tiếp sang claim mới chỉ tốn quota vô ích → dừng cả lượt.
+                    print("[STOP] Chế độ paired: dừng lượt này, chạy lại sau khi quota hồi.")
+                    break
                 blocked.add(s)
-                print(f"\n[QUOTA] {s}: {str(e)[:160]}\n  -> tạm dừng {s}; chạy lại cùng lệnh sau khi quota reset để tiếp tục.")
+                print(f"  -> tạm dừng {s}; chạy lại cùng lệnh sau khi quota reset để tiếp tục.")
                 if blocked >= set(systems):
                     print("[STOP] Tất cả hệ thống đều hết quota.")
                     break

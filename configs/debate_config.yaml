@@ -89,6 +89,11 @@ debate_settings:
   parallel_opening: true
 
 # Thiết lập DAR Filtering (Phase 3)
+# Model dịch Việt ↔ Anh trong app (tách khỏi Judge để không ăn quota của Judge)
+translation_settings:
+  backend: "Groq (cloud)"
+  model: "openai/gpt-oss-20b"
+
 dar_settings:
   enable_dar: true
   filter_backend: "Groq (cloud)"

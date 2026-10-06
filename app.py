@@ -538,12 +538,56 @@ SYSTEM_LABELS = {
 }
 
 
+def render_retrieval_results():
+    """Retrieval quality on all 300 SciFact dev claims (no LLM calls) — experiments/retrieval_eval.py."""
+    st.markdown('<div class="section-heading" style="font-size:1.25rem">1. Evidence retrieval (300 dev claims)</div>',
+                unsafe_allow_html=True)
+    path = RESULTS_DIR / "retrieval_dev.json"
+    if not path.exists():
+        st.info("Run `python -m experiments.retrieval_eval` to compute retrieval results.")
+        return
+    data = json.loads(path.read_text(encoding="utf-8"))
+    rows = [{
+        "Method": r["method"], "Stance": r["stance"],
+        "Recall@1": r["recall@1"], "Recall@3": r["recall@3"], "Recall@5": r["recall@5"],
+        "Recall@10": r["recall@10"], "No document returned": r["empty"],
+    } for r in data["results"]]
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.caption(
+        f"Recall@k: share of the {data['results'][0]['n_with_evidence']} claims with gold evidence whose gold abstract "
+        f"is in the top-k of {data['corpus_size']:,} SciFact abstracts. PRO and CON top-5 evidence sets differ by "
+        f"{data['pro_con_top5_difference']} documents on average."
+    )
+
+    fig = go.Figure()
+    for r, color in zip(
+        [r for r in data["results"] if r["stance"] in ("PRO", "NEUTRAL")],
+        ["#9C98A6", "#C9C6D0", "#2B44EF"],
+    ):
+        fig.add_trace(go.Bar(
+            name=f"{r['method']} ({r['stance']})", x=[f"Recall@{k}" for k in (1, 3, 5, 10)],
+            y=[r[f"recall@{k}"] for k in (1, 3, 5, 10)], marker_color=color,
+            text=[f"{r[f'recall@{k}']:.2f}" for k in (1, 3, 5, 10)], textposition="outside",
+        ))
+    fig.update_layout(
+        barmode="group", yaxis=dict(range=[0, 1.08], title="Recall"), height=360,
+        margin=dict(t=20, b=40, l=10, r=10), legend=dict(orientation="h", y=-0.18),
+        plot_bgcolor="#FFFFFF", paper_bgcolor="#F8F7F2",
+        font=dict(family="JetBrains Mono, monospace", size=12, color="#0F0F1A"),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
 def render_experiments_page():
     st.markdown(
         '<span class="section-heading-mono">Evaluation</span>'
         '<div class="section-heading">Experiment Results — SciFact</div>',
         unsafe_allow_html=True,
     )
+    render_retrieval_results()
+
+    st.markdown('<div class="section-heading" style="font-size:1.25rem">2. End-to-end verification</div>',
+                unsafe_allow_html=True)
     summaries = sorted(RESULTS_DIR.glob("scifact_dev_n*_summary.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     summaries = [p for p in summaries if "train" not in p.name]
     if not summaries:
@@ -573,7 +617,9 @@ def render_experiments_page():
             "Macro-F1 95% CI": f"[{lo:.3f}, {hi:.3f}]",
             "ECE ↓": round(m["ece"], 3),
             "Brier ↓": round(m["brier_score"], 3),
-            "McNemar p vs SciDebate": m.get("mcnemar_vs_scidebate", {}).get("p_value", "—"),
+            "McNemar p vs SciDebate": (
+                f"{m['mcnemar_vs_scidebate']['p_value']:.3f}" if "mcnemar_vs_scidebate" in m else "—"
+            ),
         })
     st.dataframe(rows, use_container_width=True, hide_index=True)
 
@@ -1980,7 +2026,9 @@ if start:
             u_judge_llm = None
 
         # LLM dùng để dịch Việt ↔ Anh (dùng model của Judge, temperature 0)
-        translator_llm = _create_llm(judge_config, 0.0, 1500)
+        # Separate model from the Judge so translating in demos does not consume the
+        # Judge's daily free quota (Groq limits tokens per model per day).
+        translator_llm = _create_llm(config.get("translation_settings") or judge_config, 0.0, 1500)
 
         if use_dar:
             dar_cfg  = config.get("dar_settings", {})
